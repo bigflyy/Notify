@@ -1,0 +1,99 @@
+package com.example.notify.stt;
+
+import android.annotation.SuppressLint;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.util.Log;
+
+import java.io.DataOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class SpeechTranscriber {
+    private static final int SAMPLE_RATE = 16000;
+    private final SherpaOnnxEngine sttEngine;
+    private AudioRecord audioRecord;
+    private boolean isRecording = false;
+    private Thread recordingThread;
+    private String lastAudioPath;
+
+    public SpeechTranscriber(SherpaOnnxEngine sttEngine) {
+        this.sttEngine = sttEngine;
+    }
+
+    @SuppressLint("MissingPermission")
+    public void startRecording(String outputFilePath) {
+        this.lastAudioPath = outputFilePath;
+        int bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, 
+                AudioFormat.CHANNEL_IN_MONO, 
+                AudioFormat.ENCODING_PCM_16BIT);
+        
+        audioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, 
+                SAMPLE_RATE, 
+                AudioFormat.CHANNEL_IN_MONO, 
+                AudioFormat.ENCODING_PCM_16BIT, 
+                bufferSize);
+
+        audioRecord.startRecording();
+        isRecording = true;
+        audioData.clear();
+
+        recordingThread = new Thread(() -> {
+            short[] buffer = new short[bufferSize];
+            try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(outputFilePath))) {
+                while (isRecording) {
+                    int read = audioRecord.read(buffer, 0, buffer.length);
+                    if (read > 0) {
+                        for (int i = 0; i < read; i++) {
+                            short s = buffer[i];
+                            audioData.add(s / 32768.0f);
+                            // Write Little-Endian (low byte first)
+                            dos.writeByte(s & 0xFF);
+                            dos.writeByte((s >> 8) & 0xFF);
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                Log.e("SpeechTranscriber", "Error writing audio file", e);
+            }
+        });
+        recordingThread.start();
+    }
+
+    public String getLastAudioPath() {
+        return lastAudioPath;
+    }
+
+    public String stopRecording() {
+        isRecording = false;
+        try {
+            if (recordingThread != null) {
+                recordingThread.join();
+            }
+            if (audioRecord != null) {
+                audioRecord.stop();
+                audioRecord.release();
+                audioRecord = null;
+            }
+        } catch (InterruptedException e) {
+            Log.e("SpeechTranscriber", "Error stopping recording", e);
+        }
+
+        if (audioData.isEmpty()) {
+            return "";
+        }
+
+        float[] audioArray = new float[audioData.size()];
+        for (int i = 0; i < audioData.size(); i++) {
+            audioArray[i] = audioData.get(i);
+        }
+        audioData.clear();
+
+        return sttEngine.transcribe(audioArray, SAMPLE_RATE);
+    }
+
+    private final List<Float> audioData = new ArrayList<>();
+}
