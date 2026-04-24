@@ -1,10 +1,13 @@
 package com.example.notify.stt;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.util.Log;
+
+import com.example.notify.utils.AssetUtils;
 
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
@@ -23,9 +26,27 @@ public class SpeechTranscriber {
     private String lastAudioPath;
 
     public SpeechTranscriber(SherpaOnnxEngine sttEngine) {
-        this.sttEngine = sttEngine;
+        if (sttEngine != null) {
+            this.sttEngine = sttEngine;
+        }
+        else
+        {
+            this.sttEngine = new SherpaOnnxEngine();
+        }
     }
-
+    public boolean init(Context context){
+        String modelDir = context.getFilesDir().getAbsolutePath() + "/model";
+        try {
+            AssetUtils.copyAssets(context, "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16", modelDir);
+            return sttEngine.init(context, modelDir);
+        } catch (IOException e) {
+            Log.e("MainViewModel", "Error loading model", e);
+            return false;
+        }
+    }
+    public void free(){
+        sttEngine.free();
+    }
     @SuppressLint("MissingPermission")
     public void startRecording(String outputFilePath) {
         this.lastAudioPath = outputFilePath;

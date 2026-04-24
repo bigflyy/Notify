@@ -46,7 +46,6 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<Boolean> isEngineReady = new MutableLiveData<>(false);
     private final NoteMapper noteMapper;
     private final SpeechTranscriber transcriber;
-    private final SherpaOnnxEngine sttEngine;
 
     private final MutableLiveData<List<Note>> allNotes = new MutableLiveData<>();
     private final MutableLiveData<List<Tag>> allTags = new MutableLiveData<>();
@@ -63,8 +62,6 @@ public class MainViewModel extends AndroidViewModel {
     private volatile int seekToSeconds = -1;
     private Integer pendingAnchorId = null;
 
-
-
     public MainViewModel(Application application) {
         super(application);
         AppDatabase db = Room.databaseBuilder(application, AppDatabase.class, "notify-db")
@@ -72,18 +69,11 @@ public class MainViewModel extends AndroidViewModel {
                 .allowMainThreadQueries()
                 .build();
         noteMapper = new NoteMapper(db.noteDao());
-        sttEngine = new SherpaOnnxEngine();
-        transcriber = new SpeechTranscriber(sttEngine);
+        transcriber = new SpeechTranscriber(null);
         
         new Thread(() -> {
-            String modelDir = application.getFilesDir().getAbsolutePath() + "/model";
-            try {
-                AssetUtils.copyAssets(application, "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16", modelDir);
-                if (sttEngine.init(application, modelDir)) {
-                    isEngineReady.postValue(true);
-                }
-            } catch (IOException e) {
-                Log.e("MainViewModel", "Error loading model", e);
+            if (transcriber.init(application)) {
+                isEngineReady.postValue(true);
             }
         }).start();
         loadNotes();
@@ -573,6 +563,6 @@ public class MainViewModel extends AndroidViewModel {
     protected void onCleared() {
         super.onCleared();
         stopAudio();
-        sttEngine.free();
+        transcriber.free();
     }
 }
