@@ -24,6 +24,9 @@ public interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     NoteEntity getNoteById(int id);
 
+    @Query("SELECT * FROM tags WHERE id = :id")
+    TagEntity getTagById(int id);
+
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
     List<NoteEntity> getAllNotes();
 
@@ -50,12 +53,14 @@ public interface NoteDao {
 
     @Insert
     void insertNoteTag(NoteTagEntity noteTag);
+    @Delete
+    void deleteTag(TagEntity tag);
 
     @Query("SELECT t.* FROM tags t " +
             "LEFT JOIN note_tags nt ON t.id = nt.tagId " +
             "GROUP BY t.id " +
             "ORDER BY COUNT(nt.tagId) DESC")
-    LiveData<List<TagEntity>> getAllTagsSortedByFrequency();
+    List<TagEntity> getAllTagsSortedByFrequency();
 
     @Query("SELECT t.* FROM tags t " +
             "INNER JOIN note_tags nt ON t.id = nt.tagId " +
@@ -66,8 +71,7 @@ public interface NoteDao {
     @Query("DELETE FROM note_tags WHERE noteId = :noteId")
     void deleteNoteTagsForNote(int noteId);
 
-    @Delete
-    void deleteTag(TagEntity tag);
+
 
     @Query("DELETE FROM note_tags WHERE tagId = :tagId")
     void deleteLinksByTagId(int tagId);

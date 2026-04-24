@@ -16,21 +16,17 @@ import java.util.Date;
 import java.util.List;
 
 public class NoteMapper {
+    // Шлюз, который инкапсулирует доступ к источнику данных (БД)
     private final NoteDao noteDao;
-
     public NoteMapper(NoteDao noteDao) {
         this.noteDao = noteDao;
-    }
-
-    public NoteDao getDao() {
-        return noteDao;
     }
 
     public Note get(int id) {
         NoteEntity noteEntity = noteDao.getNoteById(id);
         if (noteEntity == null) return null;
 
-        Note note = new Note(noteEntity.id, noteEntity.title, new Date(noteEntity.createdAt), new Date(noteEntity.lastModifiedAt));
+        Note note = new Note(noteEntity.id, noteEntity.title, new Date(noteEntity.createdAt));
 
         List<EntryEntity> entryEntities = noteDao.getEntriesForNote(id);
         for (EntryEntity ee : entryEntities) {
@@ -53,7 +49,6 @@ public class NoteMapper {
         NoteEntity ne = new NoteEntity();
         ne.title = note.getTitle();
         ne.createdAt = note.getCreatedAt().getTime();
-        ne.lastModifiedAt = note.getLastModifiedAt() != null ? note.getLastModifiedAt().getTime() : ne.createdAt;
         int noteId = (int) noteDao.insertNote(ne);
         note.setId(noteId);
 
@@ -75,7 +70,6 @@ public class NoteMapper {
         ne.id = note.getId();
         ne.title = note.getTitle();
         ne.createdAt = note.getCreatedAt().getTime();
-        ne.lastModifiedAt = note.getLastModifiedAt() != null ? note.getLastModifiedAt().getTime() : System.currentTimeMillis();
         noteDao.updateNote(ne);
 
         // Instead of deleting everything, we handle entries more carefully
@@ -117,6 +111,53 @@ public class NoteMapper {
         noteDao.deleteNote(ne);
     }
 
+    public List<Note> getAllNotes() {
+        // 1. Получаем список всех базовых сущностей из базы
+        List<NoteEntity> entities = noteDao.getAllNotes();
+
+        List<Note> notes = new ArrayList<>();
+        for (NoteEntity entity : entities) {
+            // 2. Вызываем внутренний метод get(id), который уже умеет
+            // подтягивать записи (entries) и теги (tags).
+            notes.add(this.get(entity.id));
+        }
+        return notes;
+    }
+    public List<Tag> getAllTags() {
+        // 1Обращаемся к Шлюзу (DAO) за сырыми данными
+        List<TagEntity> entities = noteDao.getAllTagsSortedByFrequency();
+
+        List<Tag> tags = new ArrayList<>();
+        for (TagEntity entity : entities) {
+            // Вызываем внутренний метод get(id), который уже умеет
+            // подтягивать записи (entries) и теги (tags).
+            tags.add(this.getTag(entity.id));
+        }
+        return tags;
+    }
+    public Tag getTag(int id) {
+        TagEntity te = noteDao.getTagById(id);
+        if (te == null) return null;
+        return new Tag(te.id, te.name);
+    }
+    public void deleteTag(Tag tag) {
+        TagEntity te = new TagEntity();
+        te.id = tag.getId(); // Нам нужен только ID
+        // Удалить все связи
+        noteDao.deleteLinksByTagId(te.id);
+        // Поле name можно даже не заполнять, если в DAO @Delete настроен по PrimaryKey
+        // Удалить сам тэг
+        noteDao.deleteTag(te);
+    }
+    public void insertTag(Tag tag) {
+        TagEntity te = new TagEntity();
+        // Если ID автогенерируемый (0), Room сам присвоит новый
+        te.id = tag.getId();
+        te.name = tag.getName();
+
+        noteDao.insertTag(te);
+    }
+    // Вспомогательные методы
     private void updateEntry(int noteId, Entry entry) {
         EntryEntity ee = new EntryEntity();
         ee.id = entry.getId();
@@ -134,8 +175,7 @@ public class NoteMapper {
         }
         noteDao.updateEntry(ee);
     }
-
-    public long insertEntry(int noteId, Entry entry) {
+    private long insertEntry(int noteId, Entry entry) {
         EntryEntity ee = new EntryEntity();
         ee.noteId = noteId;
         ee.sortOrder = entry.getSortOrder();
@@ -150,15 +190,6 @@ public class NoteMapper {
             ee.duration = ((AudioEntry) entry).getDuration();
         }
         return noteDao.insertEntry(ee);
-    }
-    public List<Tag> toDomainTags(List<TagEntity> entities) {
-        List<Tag> tags = new ArrayList<>();
-        if (entities != null) {
-            for (TagEntity te : entities) {
-                tags.add(new Tag(te.id, te.name));
-            }
-        }
-        return tags;
     }
     private int getOrInsertTag(Tag tag) {
         TagEntity existing = noteDao.getTagByName(tag.getName());

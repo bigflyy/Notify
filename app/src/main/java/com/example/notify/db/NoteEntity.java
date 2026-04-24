@@ -9,5 +9,4 @@ public class NoteEntity {
     public int id;
     public String title;
     public long createdAt;
-    public long lastModifiedAt;
 }

@@ -14,9 +14,13 @@ import java.io.File;
 import java.util.Arrays;
 
 public class SherpaOnnxEngine {
+    // Распознователь речи
     private OfflineRecognizer recognizer;
+    // Настройки модели обнаружение голосовой активности
     private VadModelConfig vadConfig;
-    private int windowSize = 512;
+    // Размер окна модели обнаружения голосовой активности. Влияет на точность и нагрузку на CPU
+    private final int windowSize = 512;
+    // Тэг для логирования
     private static final String TAG = "SherpaOnnxEngine";
 
     public boolean init(Context context, String modelDir) {

@@ -8,15 +8,13 @@ public class Note {
     private Integer id;
     private String title;
     private Date createdAt;
-    private Date lastModifiedAt;
     private List<Entry> entries;
     private List<Tag> tags;
 
-    public Note(Integer id, String title, Date createdAt, Date lastModifiedAt) {
+    public Note(Integer id, String title, Date createdAt) {
         this.id = id;
         this.title = title;
         this.createdAt = createdAt;
-        this.lastModifiedAt = lastModifiedAt;
         this.entries = new ArrayList<>();
         this.tags = new ArrayList<>();
     }
@@ -27,8 +25,6 @@ public class Note {
     public void setTitle(String title) { this.title = title; }
     public Date getCreatedAt() { return createdAt; }
     public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
-    public Date getLastModifiedAt() { return lastModifiedAt; }
-    public void setLastModifiedAt(Date lastModifiedAt) { this.lastModifiedAt = lastModifiedAt; }
     public List<Entry> getEntries() { return entries; }
     public void setEntries(List<Entry> entries) { this.entries = entries; }
     public List<Tag> getTags() { return tags; }

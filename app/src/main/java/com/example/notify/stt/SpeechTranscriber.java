@@ -14,7 +14,9 @@ import java.util.List;
 
 public class SpeechTranscriber {
     private static final int SAMPLE_RATE = 16000;
+    // Движок распознования речи
     private final SherpaOnnxEngine sttEngine;
+    // Системный класс для доступа к микорофону и записи аудио
     private AudioRecord audioRecord;
     private boolean isRecording = false;
     private Thread recordingThread;
@@ -49,9 +51,14 @@ public class SpeechTranscriber {
                     if (read > 0) {
                         for (int i = 0; i < read; i++) {
                             short s = buffer[i];
+                            // convert to float [-1, 1] as required by model
                             audioData.add(s / 32768.0f);
                             // Write Little-Endian (low byte first)
+                            // we want to transform 16 bit short in two separate bytes
+                            // first the last 8 bits
+                            // 0xFF is a mask like 00000000 11111111
                             dos.writeByte(s & 0xFF);
+                            // we shift 8 bits to the right and do the same mask
                             dos.writeByte((s >> 8) & 0xFF);
                         }
                     }
