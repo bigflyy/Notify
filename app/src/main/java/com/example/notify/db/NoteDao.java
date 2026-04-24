@@ -24,9 +24,6 @@ public interface NoteDao {
     @Query("SELECT * FROM notes WHERE id = :id")
     NoteEntity getNoteById(int id);
 
-    @Query("SELECT * FROM tags WHERE id = :id")
-    TagEntity getTagById(int id);
-
     @Query("SELECT * FROM notes ORDER BY createdAt DESC")
     List<NoteEntity> getAllNotes();
 
@@ -44,6 +41,9 @@ public interface NoteDao {
 
     @Query("DELETE FROM entries WHERE noteId = :noteId")
     void deleteEntriesForNote(int noteId);
+
+    @Query("SELECT * FROM tags WHERE id = :id")
+    TagEntity getTagById(int id);
 
     @Insert
     void insertTag(TagEntity tag);

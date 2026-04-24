@@ -36,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.notify.domain.AudioEntry
 import com.example.notify.domain.TextEntry
 import com.example.notify.ui.MainViewModel
+import com.example.notify.ui.MainViewModelNoPattern
 import com.example.notify.ui.theme.NotifyTheme
 import java.text.SimpleDateFormat
 import java.util.Locale
