@@ -1,5 +1,6 @@
 package com.example.notify.db;
 
+import androidx.lifecycle.LiveData;
 import androidx.room.Dao;
 import androidx.room.Delete;
 import androidx.room.Insert;
@@ -50,9 +51,24 @@ public interface NoteDao {
     @Insert
     void insertNoteTag(NoteTagEntity noteTag);
 
-    @Query("SELECT t.* FROM tags t INNER JOIN note_tags nt ON t.id = nt.tagId WHERE nt.noteId = :noteId")
+    @Query("SELECT t.* FROM tags t " +
+            "LEFT JOIN note_tags nt ON t.id = nt.tagId " +
+            "GROUP BY t.id " +
+            "ORDER BY COUNT(nt.tagId) DESC")
+    LiveData<List<TagEntity>> getAllTagsSortedByFrequency();
+
+    @Query("SELECT t.* FROM tags t " +
+            "INNER JOIN note_tags nt ON t.id = nt.tagId " +
+            "WHERE nt.noteId = :noteId " +
+            "ORDER BY nt.id ASC") // Sort by the link's creation order
     List<TagEntity> getTagsForNote(int noteId);
 
     @Query("DELETE FROM note_tags WHERE noteId = :noteId")
     void deleteNoteTagsForNote(int noteId);
+
+    @Delete
+    void deleteTag(TagEntity tag);
+
+    @Query("DELETE FROM note_tags WHERE tagId = :tagId")
+    void deleteLinksByTagId(int tagId);
 }

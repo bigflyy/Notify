@@ -151,7 +151,15 @@ public class NoteMapper {
         }
         return noteDao.insertEntry(ee);
     }
-
+    public List<Tag> toDomainTags(List<TagEntity> entities) {
+        List<Tag> tags = new ArrayList<>();
+        if (entities != null) {
+            for (TagEntity te : entities) {
+                tags.add(new Tag(te.id, te.name));
+            }
+        }
+        return tags;
+    }
     private int getOrInsertTag(Tag tag) {
         TagEntity existing = noteDao.getTagByName(tag.getName());
         if (existing != null) {
@@ -162,4 +170,5 @@ public class NoteMapper {
         noteDao.insertTag(te);
         return noteDao.getTagByName(tag.getName()).id;
     }
+
 }

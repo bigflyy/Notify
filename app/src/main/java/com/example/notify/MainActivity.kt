@@ -10,8 +10,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -72,9 +74,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
     val notes by viewModel.allNotes.observeAsState(emptyList())
+    val allDbTags by viewModel.allTags.observeAsState(emptyList())
     val currentNote by viewModel.currentNote.observeAsState()
     val isRecording by viewModel.isRecording.observeAsState(false)
     val isEngineReady by viewModel.isEngineReady.observeAsState(false)
@@ -109,11 +113,44 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
+                                    // 1. The Title
                                     Text(
                                         text = if (note.title.isNullOrBlank()) "Empty Note" else note.title,
                                         style = MaterialTheme.typography.titleMedium,
                                         maxLines = 1
                                     )
+
+                                    // 2. THE TAGS (Add this block)
+                                    if (note.tags.isNotEmpty()) {
+                                        FlowRow(
+                                            modifier = Modifier.padding(vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            note.tags.take(3).forEach { tag -> // Show only first 3 tags to keep it clean
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "#${tag.name}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                                    )
+                                                }
+                                            }
+                                            if (note.tags.size > 3) {
+                                                Text(
+                                                    text = "+${note.tags.size - 3}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color.Gray,
+                                                    modifier = Modifier.align(Alignment.CenterVertically)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 3. The Date
                                     val dateFormatter = remember { SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()) }
                                     Text(
                                         text = "Created: ${dateFormatter.format(note.createdAt)}",
@@ -155,13 +192,20 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                 onMoveEntry = { from, to -> viewModel.moveEntry(from, to) },
                 onCommitMove = { viewModel.commitMove() },
                 onDeleteEntry = { viewModel.deleteEntry(it) },
-                onAddTextEntry = { viewModel.addTextEntry() }
+                onAddTextEntry = { viewModel.addTextEntry() },
+                onAddTag = { viewModel.addTag(it) },
+                allExistingTags = allDbTags,
+                onRemoveTag = { tag -> viewModel.removeTag(currentNote, tag) },
+                onDeleteTagGlobally = { tag: com.example.notify.domain.Tag ->
+                    viewModel.deleteTagFromDatabase(tag)
+                }
+
             )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NoteEditor(
     note: com.example.notify.domain.Note,
@@ -182,7 +226,11 @@ fun NoteEditor(
     onMoveEntry: (Int, Int) -> Unit,
     onCommitMove: () -> Unit,
     onDeleteEntry: (Int) -> Unit,
-    onAddTextEntry: () -> Unit
+    onAddTextEntry: () -> Unit,
+    onAddTag: (String) -> Unit,
+    onRemoveTag: (com.example.notify.domain.Tag) -> Unit,
+    allExistingTags: List<com.example.notify.domain.Tag>,
+    onDeleteTagGlobally: (com.example.notify.domain.Tag) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var title by remember(note.id) { mutableStateOf(note.title ?: "") }
@@ -246,7 +294,131 @@ fun NoteEditor(
                 )
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. Show existing tags
+                note.tags.forEach { tag ->
+                    InputChip(
+                        selected = false,
+                        onClick = { /* Optional: filter by tag */ },
+                        label = { Text("#${tag.name}", style = MaterialTheme.typography.labelSmall) },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Remove",
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { onRemoveTag(tag) }
+                            )
+                        },
+                        colors = InputChipDefaults.inputChipColors(
+                            labelColor = MaterialTheme.colorScheme.primary
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                    )
+                }
+                // 2. The "Add Tag" button
+                var showDialog by remember { mutableStateOf(false) }
 
+                AssistChip(
+                    onClick = { showDialog = true },
+                    label = { Text("Add Tag") },
+                    leadingIcon = { Icon(Icons.Default.Add, null, modifier = Modifier.size(14.dp)) }
+                )
+
+                // 3. Simple Dialog to type new tag
+                if (showDialog) {
+                    var newTagName by remember { mutableStateOf("") }
+
+                    AlertDialog(
+                        onDismissRequest = { showDialog = false },
+                        title = { Text("New Tag") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextField(
+                                    value = newTagName,
+                                    onValueChange = { newTagName = it },
+                                    singleLine = true,
+                                    placeholder = { Text("e.g. Work, Ideas...") }
+                                )
+
+                                // Only show if there are tags to suggest
+                                if (allExistingTags.isNotEmpty()) {
+                                    Text("Suggestions:", style = MaterialTheme.typography.labelSmall)
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        items(allExistingTags) { tag ->
+                                            // We use OutlinedCard to get the standard chip border and shape
+                                            OutlinedCard(
+                                                shape = RoundedCornerShape(8.dp), // Recreates the chip shape
+                                                border = BorderStroke(
+                                                    width = 1.dp,
+                                                    // Uses the standard chip outline color
+                                                    color = MaterialTheme.colorScheme.outline
+                                                ),
+                                                colors = CardDefaults.outlinedCardColors(
+                                                    // Recreates the transparent chip background
+                                                    containerColor = Color.Transparent
+                                                ),
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    // 1. More padding to make the chip "a bit bigger"
+                                                    modifier = Modifier.padding(start = 12.dp, end = 6.dp)
+                                                ) {
+                                                    // Click the text to add the tag
+                                                    Text(
+                                                        text = tag.name,
+                                                        // 2. Standard SuggestionChip text style
+                                                        style = MaterialTheme.typography.labelLarge,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier
+                                                            .clickable {
+                                                                onAddTag(tag.name)
+                                                                showDialog = false
+                                                            }
+                                                            .padding(vertical = 10.dp) // More vertical space
+                                                    )
+
+                                                    // 3. Spacing between the name and the X button
+                                                    Spacer(modifier = Modifier.width(15.dp))
+
+                                                    // The 'X' button to delete from DB
+                                                    IconButton(
+                                                        onClick = { onDeleteTagGlobally(tag) },
+                                                        modifier = Modifier.size(30.dp) // Standard icon size
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = "Delete Global",
+                                                            // Use a slightly dimmer red so it doesn't shout
+                                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (newTagName.isNotBlank()) {
+                                    onAddTag(newTagName)
+                                    showDialog = false
+                                }
+                            }) { Text("Add") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDialog = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f)

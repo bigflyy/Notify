@@ -13,13 +13,17 @@ import android.util.Log;
 import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
+import androidx.lifecycle.Transformations;
 import androidx.room.Room;
 
 import com.example.notify.db.AppDatabase;
+import com.example.notify.db.NoteDao;
 import com.example.notify.db.NoteEntity;
+import com.example.notify.db.TagEntity;
 import com.example.notify.domain.AudioEntry;
 import com.example.notify.domain.Entry;
 import com.example.notify.domain.Note;
+import com.example.notify.domain.Tag;
 import com.example.notify.domain.TextEntry;
 import com.example.notify.mapper.NoteMapper;
 import com.example.notify.stt.SherpaOnnxEngine;
@@ -34,6 +38,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 
 public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<Boolean> isRecording = new MutableLiveData<>(false);
@@ -55,6 +60,8 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<Integer> playbackDuration = new MutableLiveData<>(0);
     private volatile int seekToSeconds = -1;
     private Integer pendingAnchorId = null;
+    private final LiveData<List<Tag>> allTags;
+
 
     public MainViewModel(Application application) {
         super(application);
@@ -78,10 +85,16 @@ public class MainViewModel extends AndroidViewModel {
             }
         }).start();
 
+
+        this.allTags = Transformations.map(
+                db.noteDao().getAllTagsSortedByFrequency(),
+                noteMapper::toDomainTags
+        );
         loadNotes();
     }
 
     public LiveData<List<Note>> getAllNotes() { return allNotes; }
+    public LiveData<List<Tag>> getAllTags() {return  allTags; }
     public LiveData<Note> getCurrentNote() { return currentNote; }
     public LiveData<Boolean> getIsRecording() { return isRecording; }
     public LiveData<Boolean> getIsEngineReady() { return isEngineReady; }
@@ -89,15 +102,60 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<Integer> getPlaybackPosition() { return playbackPosition; }
     public LiveData<Integer> getPlaybackDuration() { return playbackDuration; }
 
-    public void loadNotes() {
-        List<NoteEntity> entities = noteMapper.getDao().getAllNotes();
-        List<Note> notes = new ArrayList<>();
-        for (NoteEntity entity : entities) {
-            notes.add(noteMapper.get(entity.id));
-        }
-        allNotes.setValue(notes);
+    public void removeTag(Note note, Tag tag) {
+        // 1. Remove from the local list
+        note.getTags().removeIf(t -> Objects.equals(t.getId(), tag.getId()));
+
+        new Thread(() -> {
+            // 2. Update the DB (NoteMapper handles the junction table sync)
+            noteMapper.update(note);
+
+            // 3. Refresh UI
+            Note updated = noteMapper.get(note.getId());
+            currentNote.postValue(updated);
+            loadNotes();
+        }).start();
+    }
+    public void deleteTagFromDatabase(Tag tag) {
+        if (tag == null || tag.getId() == null) return;
+
+        new Thread(() -> {
+            // Access the DAO through the existing mapper's getter
+            NoteDao dao = noteMapper.getDao();
+
+            // 1. Remove all associations from the junction table
+            dao.deleteLinksByTagId(tag.getId());
+
+            // 2. Delete the actual tag from the tags table
+            TagEntity te = new TagEntity();
+            te.id = tag.getId();
+            te.name = tag.getName();
+            dao.deleteTag(te);
+
+            // 3. Refresh the main screen and current note
+            loadNotes();
+            Note current = currentNote.getValue();
+            if (current != null) {
+                currentNote.postValue(noteMapper.get(current.getId()));
+            }
+        }).start();
     }
 
+    public void loadNotes() {
+        new Thread(() -> {
+            try {
+                List<NoteEntity> entities = noteMapper.getDao().getAllNotes();
+                List<Note> notes = new ArrayList<>();
+                for (NoteEntity entity : entities) {
+                    notes.add(noteMapper.get(entity.id));
+                }
+                // Use postValue to update the LiveData from a background thread
+                allNotes.postValue(notes);
+            } catch (Exception e) {
+                Log.e("MainViewModel", "Error loading notes", e);
+            }
+        }).start();
+    }
     public void selectNote(Note note) {
         if (note == null) {
             if (Boolean.TRUE.equals(isRecording.getValue())) {
@@ -136,6 +194,38 @@ public class MainViewModel extends AndroidViewModel {
             noteMapper.update(note);
             currentNote.setValue(noteMapper.get(note.getId()));
             loadNotes();
+        }
+    }
+
+    public void addTag(String name) {
+        Note note = currentNote.getValue();
+        if (note != null && name != null && !name.trim().isEmpty()) {
+            String trimmedName = name.trim();
+
+            // Check if the note already has this tag (case-insensitive)
+            for (Tag existingTag : note.getTags()) {
+                if (existingTag.getName().equalsIgnoreCase(trimmedName)) {
+                    return; // Tag already exists on this note, do nothing
+                }
+            }
+
+            // 1. Update the in-memory object immediately for the Editor UI
+            note.getTags().add(new Tag(null, trimmedName));
+
+            // This force-updates the LiveData so the UI shows the new tag immediately
+            currentNote.setValue(note);
+
+            new Thread(() -> {
+                // 2. Perform the heavy DB lift
+                noteMapper.update(note);
+
+                // 3. Re-fetch the full note to keep the Editor consistent
+                Note updatedNote = noteMapper.get(note.getId());
+                currentNote.postValue(updatedNote);
+
+                // 4. Trigger the main list reload
+                loadNotes();
+            }).start();
         }
     }
 
@@ -188,14 +278,15 @@ public class MainViewModel extends AndroidViewModel {
             }).start();
         }
     }
-
     private void syncMainListOnly() {
-        List<NoteEntity> entities = noteMapper.getDao().getAllNotes();
-        List<Note> notes = new ArrayList<>();
-        for (NoteEntity entity : entities) {
-            notes.add(noteMapper.get(entity.id));
-        }
-        allNotes.postValue(notes);
+        new Thread(() -> {
+            List<NoteEntity> entities = noteMapper.getDao().getAllNotes();
+            List<Note> notes = new ArrayList<>();
+            for (NoteEntity entity : entities) {
+                notes.add(noteMapper.get(entity.id));
+            }
+            allNotes.postValue(notes);
+        }).start();
     }
 
     public void updateEntryContent(int index, String content) {
