@@ -465,12 +465,18 @@ public class MainViewModelNoPattern extends AndroidViewModel {
         isPlaying = true;
         playingAudioPath.postValue(audioPath);
         int sampleRate = 16000;
-        playbackDuration.postValue((int) (file.length() / (sampleRate * 2)));
+        int bytesPerSec = sampleRate * 2;
+        int duration = (int) (file.length() / bytesPerSec);
+        playbackDuration.postValue(duration);
+        playbackPosition.postValue(0); // Reset position for new audio
 
         while (isPlaying) {
-            int startSec = (seekToSeconds != -1) ? seekToSeconds : (playbackPosition.getValue() != null ? playbackPosition.getValue() : 0);
+            int startSec = (seekToSeconds != -1) ? seekToSeconds : 0;
             seekToSeconds = -1;
-            if (currentAudioTrack != null) currentAudioTrack.release();
+            if (currentAudioTrack != null) {
+                try { currentAudioTrack.stop(); } catch (Exception e) {}
+                currentAudioTrack.release();
+            }
             currentAudioTrack = new AudioTrack.Builder()
                     .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
                     .setAudioFormat(new AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
@@ -478,17 +484,21 @@ public class MainViewModelNoPattern extends AndroidViewModel {
                     .build();
             currentAudioTrack.play();
             try (FileInputStream fis = new FileInputStream(file)) {
-                fis.skip((long) startSec * sampleRate * 2);
+                fis.skip((long) startSec * bytesPerSec);
                 byte[] buf = new byte[2048];
-                int read;
-                long total = (long) startSec * sampleRate * 2;
-                while (isPlaying && (read = fis.read(buf)) != -1) {
+                int read = 0;
+                long total = (long) startSec * bytesPerSec;
+                while (isPlaying) {
                     if (seekToSeconds != -1) break;
+                    read = fis.read(buf);
+                    if (read == -1) {
+                        isPlaying = false;
+                        break;
+                    }
                     currentAudioTrack.write(buf, 0, read);
                     total += read;
-                    playbackPosition.postValue((int) (total / (sampleRate * 2)));
+                    playbackPosition.postValue((int) (total / bytesPerSec));
                 }
-                if (read == -1) isPlaying = false; // Finished naturally
             } catch (IOException e) { isPlaying = false; }
         }
         stopAudio();
@@ -496,8 +506,15 @@ public class MainViewModelNoPattern extends AndroidViewModel {
 
     public void stopAudio() {
         isPlaying = false;
-        if (currentAudioTrack != null) { try { currentAudioTrack.stop(); } catch (Exception e) {} currentAudioTrack.release(); currentAudioTrack = null; }
+        seekToSeconds = -1;
+        if (currentAudioTrack != null) {
+            try { currentAudioTrack.stop(); } catch (Exception e) {}
+            currentAudioTrack.release();
+            currentAudioTrack = null;
+        }
         playingAudioPath.postValue(null);
+        playbackPosition.postValue(0);
+        playbackDuration.postValue(0);
     }
 
     public void seekTo(int seconds) { seekToSeconds = seconds; }

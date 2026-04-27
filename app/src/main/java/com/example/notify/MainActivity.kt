@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NotifyTheme {
-                val viewModel: MainViewModelNoPattern = viewModel()
+                val viewModel: MainViewModel = viewModel()
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { }
@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MainScreen(viewModel: MainViewModelNoPattern, modifier: Modifier = Modifier) {
+fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
     val notes by viewModel.allNotes.observeAsState(emptyList())
     val allDbTags by viewModel.allTags.observeAsState(emptyList())
     val currentNote by viewModel.currentNote.observeAsState()

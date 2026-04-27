@@ -468,6 +468,7 @@ public class MainViewModel extends AndroidViewModel {
         }
         playingAudioPath.postValue(null);
         playbackPosition.postValue(0);
+        playbackDuration.postValue(0);
     }
 
     public void playAudio(String audioPath) {
@@ -490,11 +491,12 @@ public class MainViewModel extends AndroidViewModel {
         int bytesPerSecond = sampleRate * 2;
         int duration = (int) (file.length() / bytesPerSecond);
         playbackDuration.postValue(duration);
+        playbackPosition.postValue(0); // Reset for new audio track
 
         int bufferSize = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
 
         while (isPlaying) {
-            int currentStartSecond = (seekToSeconds != -1) ? seekToSeconds : (playbackPosition.getValue() != null ? playbackPosition.getValue() : 0);
+            int currentStartSecond = (seekToSeconds != -1) ? seekToSeconds : 0;
             if (seekToSeconds != -1) seekToSeconds = -1;
 
             if (currentAudioTrack != null) {
