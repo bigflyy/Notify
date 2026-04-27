@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             NotifyTheme {
-                val viewModel: MainViewModel = viewModel()
+                val viewModel: MainViewModelNoPattern = viewModel()
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { }
@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
+fun MainScreen(viewModel: MainViewModelNoPattern, modifier: Modifier = Modifier) {
     val notes by viewModel.allNotes.observeAsState(emptyList())
     val allDbTags by viewModel.allTags.observeAsState(emptyList())
     val currentNote by viewModel.currentNote.observeAsState()
@@ -554,7 +554,24 @@ fun NoteEditor(
                                                     modifier = Modifier.height(24.dp)
                                                 )
                                             }
-                                            if (!entry.transcription.isNullOrBlank()) {
+                                            if (entry.isTranscribing) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                ) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "Transcribing...",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            } else if (!entry.transcription.isNullOrBlank()) {
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = entry.transcription,

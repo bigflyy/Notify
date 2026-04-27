@@ -6,6 +6,7 @@ public class AudioEntry extends Entry {
     private String audioPath;
     private String transcription;
     private Double duration;
+    private boolean isTranscribing = false;
 
     public AudioEntry(Integer id, Integer sortOrder, Date createdAt, String audioPath, String transcription, Double duration) {
         super(id, sortOrder, createdAt);
@@ -13,6 +14,9 @@ public class AudioEntry extends Entry {
         this.transcription = transcription;
         this.duration = duration;
     }
+
+    public boolean isTranscribing() { return isTranscribing; }
+    public void setTranscribing(boolean transcribing) { isTranscribing = transcribing; }
 
     public String getAudioPath() { return audioPath; }
     public void setAudioPath(String audioPath) { this.audioPath = audioPath; }

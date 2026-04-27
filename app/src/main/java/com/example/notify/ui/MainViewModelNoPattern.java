@@ -383,24 +383,74 @@ public class MainViewModelNoPattern extends AndroidViewModel {
             return;
         }
         isRecording.setValue(false);
-        new Thread(() -> {
-            try {
-                String transcript = transcriber.stopRecording();
-                String path = transcriber.getLastAudioPath();
-                Note note = currentNote.getValue();
-                if (note != null) {
-                    List<Entry> entries = new ArrayList<>(note.getEntries());
-                    int idx = (anchor != null) ? entries.indexOf(anchor) + 1 : entries.size();
-                    while (idx < entries.size() && entries.get(idx) instanceof AudioEntry) idx++;
-                    entries.add(idx, new AudioEntry(null, idx, new Date(), path, transcript, 0.0));
-                    for (int i = 0; i < entries.size(); i++) entries.get(i).setSortOrder(i);
-                    note.setEntries(entries);
-                    saveNoteToDb(note);
-                    currentNote.postValue(convertToDomain(note.getId()));
-                    loadNotes();
+
+        String audioPath = transcriber.getLastAudioPath();
+        Note note = currentNote.getValue();
+        if (note != null) {
+            List<Entry> newEntries = new ArrayList<>(note.getEntries());
+            int anchorIndex = (anchor != null) ? newEntries.indexOf(anchor) : -1;
+            int index;
+
+            if (anchorIndex != -1) {
+                index = anchorIndex + 1;
+                while (index < newEntries.size() && newEntries.get(index) instanceof AudioEntry) {
+                    index++;
                 }
-            } finally { isTranscribing.set(false); }
-        }).start();
+            } else {
+                index = newEntries.size();
+            }
+
+            // 1. Create and add placeholder
+            AudioEntry placeholder = new AudioEntry(null, index, new Date(), audioPath, "", 0.0);
+            placeholder.setTranscribing(true);
+            newEntries.add(index, placeholder);
+
+            for (int i = 0; i < newEntries.size(); i++) {
+                newEntries.get(i).setSortOrder(i);
+            }
+
+            // Update local state IMMEDIATELY for the UI
+            Note immediateNote = new Note(note.getId(), note.getTitle(), note.getCreatedAt());
+            immediateNote.setEntries(newEntries);
+            immediateNote.setTags(note.getTags());
+            currentNote.setValue(immediateNote);
+
+            new Thread(() -> {
+                try {
+                    // Save the placeholder to DB
+                    saveNoteToDb(immediateNote);
+
+                    // 2. Perform transcription (the heavy work)
+                    String transcription = transcriber.stopRecording();
+
+                    // 3. Re-fetch from DB to get a FRESH instance and ensure IDs are synced
+                    Note finalNote = convertToDomain(note.getId());
+                    if (finalNote != null) {
+                        for (Entry e : finalNote.getEntries()) {
+                            if (e instanceof AudioEntry && audioPath.equals(((AudioEntry) e).getAudioPath())) {
+                                ((AudioEntry) e).setTranscription(transcription);
+                                ((AudioEntry) e).setTranscribing(false);
+                                break;
+                            }
+                        }
+                        // Save the final text to DB
+                        saveNoteToDb(finalNote);
+
+                        // Post the fresh object to UI - Compose will see a new reference and re-render
+                        debounceHandler.post(() -> {
+                            currentNote.setValue(finalNote);
+                            loadNotes();
+                        });
+                    }
+                } catch (Exception e) {
+                    Log.e("MainViewModelNoPattern", "Error in transcription thread", e);
+                } finally {
+                    isTranscribing.set(false);
+                }
+            }).start();
+        } else {
+            isTranscribing.set(false);
+        }
     }
 
     public void playAudio(String audioPath) {

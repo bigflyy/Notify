@@ -332,57 +332,74 @@ public class MainViewModel extends AndroidViewModel {
             return;
         }
         isRecording.setValue(false);
-        new Thread(() -> {
-            try {
-                String transcription = transcriber.stopRecording();
-                String audioPath = transcriber.getLastAudioPath();
 
-                Note note = currentNote.getValue();
-                if (note != null) {
-                    List<Entry> newEntries = new ArrayList<>(note.getEntries());
+        String audioPath = transcriber.getLastAudioPath();
+        Note note = currentNote.getValue();
+        if (note != null) {
+            List<Entry> newEntries = new ArrayList<>(note.getEntries());
+            int anchorIndex = (anchor != null) ? newEntries.indexOf(anchor) : -1;
+            int index;
 
-                    int anchorIndex = (anchor != null) ? newEntries.indexOf(anchor) : -1;
-                    int index;
-
-                    if (anchorIndex != -1) {
-                        // Jump to the end of the current audio group
-                        index = anchorIndex + 1;
-                        while (index < newEntries.size() && newEntries.get(index) instanceof AudioEntry) {
-                            index++;
-                        }
-                    } else {
-                        index = newEntries.size();
-                    }
-
-                    AudioEntry newEntry = new AudioEntry(null, index, new Date(), audioPath, transcription, 0.0);
-                    newEntries.add(index, newEntry);
-
-                    // Re-calculate sort orders
-                    for (int i = 0; i < newEntries.size(); i++) {
-                        newEntries.get(i).setSortOrder(i);
-                    }
-
-                    // Update the note object with the new list
-                    note.setEntries(newEntries);
-
-                    // Save to DB on this background thread
-                    noteMapper.update(note);
-
-                    // CRITICAL: Re-fetch a FRESH Note object from the DB to ensure a new reference
-                    // This forces Compose to see a different object ID and trigger a full re-render
-                    Note updatedNote = noteMapper.get(note.getId());
-
-                    debounceHandler.post(() -> {
-                        currentNote.setValue(updatedNote);
-                        loadNotes();
-                    });
+            if (anchorIndex != -1) {
+                index = anchorIndex + 1;
+                while (index < newEntries.size() && newEntries.get(index) instanceof AudioEntry) {
+                    index++;
                 }
-            } catch (Exception e) {
-                Log.e("MainViewModel", "Error in stopAudioRecording thread", e);
-            } finally {
-                isTranscribing.set(false);
+            } else {
+                index = newEntries.size();
             }
-        }).start();
+
+            // 1. Create and add placeholder
+            AudioEntry placeholder = new AudioEntry(null, index, new Date(), audioPath, "", 0.0);
+            placeholder.setTranscribing(true);
+            newEntries.add(index, placeholder);
+
+            for (int i = 0; i < newEntries.size(); i++) {
+                newEntries.get(i).setSortOrder(i);
+            }
+
+            // Update local state IMMEDIATELY for the UI
+            Note immediateNote = new Note(note.getId(), note.getTitle(), note.getCreatedAt());
+            immediateNote.setEntries(newEntries);
+            immediateNote.setTags(note.getTags());
+            currentNote.setValue(immediateNote);
+
+            new Thread(() -> {
+                try {
+                    // Save the placeholder to DB
+                    noteMapper.update(immediateNote);
+
+                    // 2. Perform transcription (the heavy work)
+                    String transcription = transcriber.stopRecording();
+
+                    // 3. Re-fetch from DB to get a FRESH instance and ensure IDs are synced
+                    Note finalNote = noteMapper.get(note.getId());
+                    if (finalNote != null) {
+                        for (Entry e : finalNote.getEntries()) {
+                            if (e instanceof AudioEntry && audioPath.equals(((AudioEntry) e).getAudioPath())) {
+                                ((AudioEntry) e).setTranscription(transcription);
+                                ((AudioEntry) e).setTranscribing(false);
+                                break;
+                            }
+                        }
+                        // Save the final text to DB
+                        noteMapper.update(finalNote);
+
+                        // Post the fresh object to UI - Compose will see a new reference and re-render
+                        debounceHandler.post(() -> {
+                            currentNote.setValue(finalNote);
+                            loadNotes();
+                        });
+                    }
+                } catch (Exception e) {
+                    Log.e("MainViewModel", "Error in transcription thread", e);
+                } finally {
+                    isTranscribing.set(false);
+                }
+            }).start();
+        } else {
+            isTranscribing.set(false);
+        }
     }
 
     public void splitAndInsertAudio(int entryIndex, int cursorPosition) {
