@@ -488,6 +488,7 @@ public class MainViewModelNoPattern extends AndroidViewModel {
                     total += read;
                     playbackPosition.postValue((int) (total / (sampleRate * 2)));
                 }
+                if (read == -1) isPlaying = false; // Finished naturally
             } catch (IOException e) { isPlaying = false; }
         }
         stopAudio();
