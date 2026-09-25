@@ -284,6 +284,7 @@ fun NoteEditor(
         }
     }
     var title by remember(note.id) { mutableStateOf(note.title ?: "") }
+    var showExportMenu by remember(note.id) { mutableStateOf(false) }
     var selectedBlockIndex by remember { mutableIntStateOf(-1) }
     var micTargetIndex by remember { mutableIntStateOf(-1) }
     var cursorPosition by remember { mutableIntStateOf(0) }
@@ -344,10 +345,32 @@ fun NoteEditor(
                         unfocusedIndicatorColor = Color.Transparent
                     )
                 )
-                IconButton(onClick = {
-                    exportLauncher.launch(markdownFileName(note))
-                }) {
-                    Icon(Icons.Default.FileDownload, contentDescription = "Export note as Markdown")
+                Box {
+                    IconButton(onClick = { showExportMenu = true }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export note")
+                    }
+                    DropdownMenu(
+                        expanded = showExportMenu,
+                        onDismissRequest = { showExportMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Copy as Markdown") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                            onClick = {
+                                showExportMenu = false
+                                clipboard.setText(AnnotatedString(noteToMarkdown(note)))
+                                Toast.makeText(context, "Markdown copied", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Save Markdown file") },
+                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            onClick = {
+                                showExportMenu = false
+                                exportLauncher.launch(markdownFileName(note))
+                            }
+                        )
+                    }
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
