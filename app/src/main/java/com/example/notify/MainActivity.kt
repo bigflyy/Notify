@@ -1,7 +1,10 @@
 package com.example.notify
 
 import android.Manifest
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -29,6 +32,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -234,6 +240,25 @@ fun NoteEditor(
     onDeleteTagGlobally: (com.example.notify.domain.Tag) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/markdown")
+    ) { uri ->
+        if (uri != null) {
+            val markdown = noteToMarkdown(note)
+            scope.launch {
+                val saved = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Could not open export file")
+                        output.use { it.write(markdown.toByteArray(Charsets.UTF_8)) }
+                    }.isSuccess
+                }
+                Toast.makeText(context, if (saved) "Note exported" else "Could not export note", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var title by remember(note.id) { mutableStateOf(note.title ?: "") }
     var selectedBlockIndex by remember { mutableIntStateOf(-1) }
     var micTargetIndex by remember { mutableIntStateOf(-1) }
@@ -281,19 +306,26 @@ fun NoteEditor(
         floatingActionButtonPosition = FabPosition.Center
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp)) {
-            TextField(
-                value = title,
-                onValueChange = { title = it; onTitleChange(it) },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Title", style = MaterialTheme.typography.headlineMedium) },
-                textStyle = MaterialTheme.typography.headlineMedium,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextField(
+                    value = title,
+                    onValueChange = { title = it; onTitleChange(it) },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Title", style = MaterialTheme.typography.headlineMedium) },
+                    textStyle = MaterialTheme.typography.headlineMedium,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
                 )
-            )
+                IconButton(onClick = {
+                    exportLauncher.launch(markdownFileName(note))
+                }) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "Export note as Markdown")
+                }
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -582,6 +614,28 @@ fun NoteEditor(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        val canCopy = entry is TextEntry ||
+                            (entry is AudioEntry && !entry.isTranscribing && !entry.transcription.isNullOrEmpty())
+                        if (canCopy) {
+                            IconButton(
+                                onClick = {
+                                    val textToCopy = when (entry) {
+                                        is TextEntry -> entry.text.orEmpty()
+                                        is AudioEntry -> entry.transcription.orEmpty()
+                                        else -> ""
+                                    }
+                                    clipboard.setText(AnnotatedString(textToCopy))
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = if (entry is AudioEntry) "Copy transcript" else "Copy text block",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
 
