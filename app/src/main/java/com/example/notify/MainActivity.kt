@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -63,18 +64,41 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val currentNote by viewModel.currentNote.observeAsState()
+                var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
-                    floatingActionButton = {
+                    bottomBar = {
                         if (currentNote == null) {
+                            NavigationBar {
+                                NavigationBarItem(
+                                    selected = selectedTab == 0,
+                                    onClick = { selectedTab = 0 },
+                                    icon = { Icon(Icons.Default.Description, contentDescription = null) },
+                                    label = { Text("Notes") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 1,
+                                    onClick = { selectedTab = 1 },
+                                    icon = { Icon(Icons.Default.UploadFile, contentDescription = null) },
+                                    label = { Text("Transcribe file") }
+                                )
+                            }
+                        }
+                    },
+                    floatingActionButton = {
+                        if (currentNote == null && selectedTab == 0) {
                             FloatingActionButton(onClick = { viewModel.createNewTextNote() }) {
                                 Icon(Icons.Default.Add, contentDescription = "New Note")
                             }
                         }
                     }
                 ) { innerPadding ->
-                    MainScreen(viewModel, Modifier.padding(innerPadding))
+                    if (selectedTab == 0 || currentNote != null) {
+                        MainScreen(viewModel, Modifier.padding(innerPadding))
+                    } else {
+                        FileTranscriptionScreen(viewModel, Modifier.padding(innerPadding))
+                    }
                 }
             }
         }

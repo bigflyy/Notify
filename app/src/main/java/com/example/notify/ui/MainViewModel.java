@@ -8,6 +8,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.util.Log;
 
 import androidx.lifecycle.AndroidViewModel;
@@ -29,6 +30,7 @@ import com.example.notify.domain.TextEntry;
 import com.example.notify.mapper.NoteMapper;
 import com.example.notify.stt.SherpaOnnxEngine;
 import com.example.notify.stt.SpeechTranscriber;
+import com.example.notify.stt.PcmWavReader;
 import com.example.notify.utils.AssetUtils;
 
 import java.io.BufferedInputStream;
@@ -36,6 +38,7 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -50,6 +53,10 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<List<Note>> allNotes = new MutableLiveData<>();
     private final MutableLiveData<List<Tag>> allTags = new MutableLiveData<>();
     private final MutableLiveData<Note> currentNote = new MutableLiveData<>();
+    private final MutableLiveData<String> importedFileName = new MutableLiveData<>();
+    private final MutableLiveData<String> importedTranscript = new MutableLiveData<>();
+    private final MutableLiveData<String> importError = new MutableLiveData<>();
+    private final MutableLiveData<Boolean> isImporting = new MutableLiveData<>(false);
     private final Handler debounceHandler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -88,6 +95,39 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<String> getPlayingAudioPath() { return playingAudioPath; }
     public LiveData<Integer> getPlaybackPosition() { return playbackPosition; }
     public LiveData<Integer> getPlaybackDuration() { return playbackDuration; }
+    public LiveData<String> getImportedFileName() { return importedFileName; }
+    public LiveData<String> getImportedTranscript() { return importedTranscript; }
+    public LiveData<String> getImportError() { return importError; }
+    public LiveData<Boolean> getIsImporting() { return isImporting; }
+
+    public void transcribeWav(Uri uri, String fileName) {
+        if (!Boolean.TRUE.equals(isEngineReady.getValue())) {
+            importError.setValue("The Russian speech model is still loading");
+            return;
+        }
+        if (Boolean.TRUE.equals(isRecording.getValue()) || isTranscribing.getAndSet(true)) {
+            importError.setValue("Finish the current recording or transcription first");
+            return;
+        }
+
+        importedFileName.setValue(fileName);
+        importedTranscript.setValue(null);
+        importError.setValue(null);
+        isImporting.setValue(true);
+        new Thread(() -> {
+            try (InputStream input = getApplication().getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IOException("Could not open the selected file");
+                float[] samples = PcmWavReader.read(input);
+                importedTranscript.postValue(transcriber.transcribeSamples(samples));
+            } catch (Exception e) {
+                Log.e("MainViewModel", "Could not transcribe imported WAV", e);
+                importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this WAV file");
+            } finally {
+                isTranscribing.set(false);
+                isImporting.postValue(false);
+            }
+        }).start();
+    }
 
     public void removeTag(Note note, Tag tag) {
         note.getTags().removeIf(t -> Objects.equals(t.getId(), tag.getId()));

@@ -47,6 +47,11 @@ public class SpeechTranscriber {
     public void free(){
         sttEngine.free();
     }
+
+    public String transcribeSamples(float[] samples) {
+        return sttEngine.transcribe(samples, SAMPLE_RATE);
+    }
+
     @SuppressLint("MissingPermission")
     public void startRecording(String outputFilePath) {
         this.lastAudioPath = outputFilePath;
