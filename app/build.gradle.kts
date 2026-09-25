@@ -64,6 +64,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
+    implementation(libs.ffmpeg.kit.audio)
+    implementation(libs.smart.exception)
     annotationProcessor(libs.room.compiler)
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
     testImplementation(libs.junit)

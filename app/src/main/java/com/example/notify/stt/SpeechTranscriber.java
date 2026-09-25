@@ -55,8 +55,21 @@ public class SpeechTranscriber {
 
     public String transcribeMedia(Context context, Uri uri) throws IOException {
         try (SherpaOnnxEngine.StreamingSession session = sttEngine.startStreaming(SAMPLE_RATE)) {
-            AndroidAudioDecoder.stream(context, uri, session::accept);
-            return session.finish();
+            try {
+                AndroidAudioDecoder.stream(context, uri, session::accept);
+                return session.finish();
+            } catch (IOException androidError) {
+                // Restart recognition: Android may have decoded some audio before failing.
+                try (SherpaOnnxEngine.StreamingSession fallback = sttEngine.startStreaming(SAMPLE_RATE)) {
+                    try {
+                        FfmpegAudioDecoder.stream(context, uri, fallback::accept);
+                        return fallback.finish();
+                    } catch (IOException ffmpegError) {
+                        ffmpegError.addSuppressed(androidError);
+                        throw ffmpegError;
+                    }
+                }
+            }
         }
     }
 

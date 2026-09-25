@@ -10,6 +10,8 @@ kotlin = "2.1.0"
 composeBom = "2024.02.01"
 room = "2.6.1"
 sherpaOnnx = "1.10.36"
+ffmpegKit = "8.1.7"
+smartException = "0.2.1"
 ksp = "2.1.0-1.0.29"
 
 [libraries]
@@ -34,6 +36,8 @@ room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 sherpa-onnx = { group = "com.k2fsa.sherpa.onnx", name = "sherpa-onnx-android", version.ref = "sherpaOnnx" }
+ffmpeg-kit-audio = { group = "dev.ffmpegkit-maintained", name = "ffmpeg-kit-audio", version.ref = "ffmpegKit" }
+smart-exception = { group = "com.arthenica", name = "smart-exception-java", version.ref = "smartException" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
