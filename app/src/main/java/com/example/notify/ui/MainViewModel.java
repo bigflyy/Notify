@@ -4,6 +4,7 @@ import android.app.Application;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
@@ -30,6 +31,8 @@ import com.example.notify.domain.TextEntry;
 import com.example.notify.mapper.NoteMapper;
 import com.example.notify.stt.SherpaOnnxEngine;
 import com.example.notify.stt.SpeechTranscriber;
+import com.example.notify.stt.MediaDurationReader;
+import com.example.notify.stt.TranscriptionProgress;
 import com.example.notify.utils.AssetUtils;
 
 import java.io.BufferedInputStream;
@@ -55,6 +58,7 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<String> importedTranscript = new MutableLiveData<>();
     private final MutableLiveData<String> importError = new MutableLiveData<>();
     private final MutableLiveData<Boolean> isImporting = new MutableLiveData<>(false);
+    private final MutableLiveData<TranscriptionProgress> importProgress = new MutableLiveData<>();
     private final Handler debounceHandler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -97,6 +101,7 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<String> getImportedTranscript() { return importedTranscript; }
     public LiveData<String> getImportError() { return importError; }
     public LiveData<Boolean> getIsImporting() { return isImporting; }
+    public LiveData<TranscriptionProgress> getImportProgress() { return importProgress; }
 
     public void transcribeFile(Uri uri, String fileName) {
         if (!Boolean.TRUE.equals(isEngineReady.getValue())) {
@@ -111,10 +116,21 @@ public class MainViewModel extends AndroidViewModel {
         importedFileName.setValue(fileName);
         importedTranscript.setValue(null);
         importError.setValue(null);
+        importProgress.setValue(null);
         isImporting.setValue(true);
         new Thread(() -> {
             try {
-                importedTranscript.postValue(transcriber.transcribeMedia(getApplication(), uri));
+                long durationMillis = MediaDurationReader.readMillis(getApplication(), uri);
+                importProgress.postValue(TranscriptionProgress.calculate(0, durationMillis, 0));
+                long[] started = { SystemClock.elapsedRealtime() };
+                long[] previous = { 0 };
+                importedTranscript.postValue(transcriber.transcribeMedia(getApplication(), uri, samples -> {
+                    long now = SystemClock.elapsedRealtime();
+                    if (samples < previous[0]) started[0] = now;
+                    previous[0] = samples;
+                    importProgress.postValue(TranscriptionProgress.calculate(
+                            samples, durationMillis, now - started[0]));
+                }));
             } catch (Exception e) {
                 Log.e("MainViewModel", "Could not transcribe imported media", e);
                 importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this file");

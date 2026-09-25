@@ -18,6 +18,10 @@ import java.util.List;
 
 public class SpeechTranscriber {
     private static final int SAMPLE_RATE = 16000;
+    @FunctionalInterface
+    public interface ProgressListener {
+        void onProcessed(long samples);
+    }
     // Движок распознования речи
     private final SherpaOnnxEngine sttEngine;
     // Системный класс для доступа к микорофону и записи аудио
@@ -54,15 +58,30 @@ public class SpeechTranscriber {
     }
 
     public String transcribeMedia(Context context, Uri uri) throws IOException {
+        return transcribeMedia(context, uri, samples -> { });
+    }
+
+    public String transcribeMedia(Context context, Uri uri, ProgressListener progress) throws IOException {
         try (SherpaOnnxEngine.StreamingSession session = sttEngine.startStreaming(SAMPLE_RATE)) {
+            long[] processed = { 0 };
             try {
-                AndroidAudioDecoder.stream(context, uri, session::accept);
+                AndroidAudioDecoder.stream(context, uri, audio -> {
+                    session.accept(audio);
+                    processed[0] += audio.length;
+                    progress.onProcessed(processed[0]);
+                });
                 return session.finish();
             } catch (IOException androidError) {
                 // Restart recognition: Android may have decoded some audio before failing.
+                progress.onProcessed(0);
+                processed[0] = 0;
                 try (SherpaOnnxEngine.StreamingSession fallback = sttEngine.startStreaming(SAMPLE_RATE)) {
                     try {
-                        FfmpegAudioDecoder.stream(context, uri, fallback::accept);
+                        FfmpegAudioDecoder.stream(context, uri, audio -> {
+                            fallback.accept(audio);
+                            processed[0] += audio.length;
+                            progress.onProcessed(processed[0]);
+                        });
                         return fallback.finish();
                     } catch (IOException ffmpegError) {
                         ffmpegError.addSuppressed(androidError);

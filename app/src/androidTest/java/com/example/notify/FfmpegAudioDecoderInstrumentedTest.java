@@ -15,6 +15,7 @@ import androidx.test.platform.app.InstrumentationRegistry;
 
 import com.example.notify.stt.AndroidAudioDecoder;
 import com.example.notify.stt.FfmpegAudioDecoder;
+import com.example.notify.stt.MediaDurationReader;
 import com.example.notify.stt.SpeechTranscriber;
 
 import org.junit.Test;
@@ -83,6 +84,7 @@ public class FfmpegAudioDecoderInstrumentedTest {
                     sampleCount.addAndGet(samples.length);
                 });
                 assertTrue(sampleCount.get() > 160000);
+                assertTrue(MediaDurationReader.readMillis(context, contentUri) >= 11000);
 
                 SpeechTranscriber transcriber = new SpeechTranscriber(null);
                 assertTrue(transcriber.init(context));

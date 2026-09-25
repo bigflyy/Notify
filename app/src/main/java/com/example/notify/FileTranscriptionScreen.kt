@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +47,7 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     val isEngineReady by viewModel.isEngineReady.observeAsState(false)
     val isRecording by viewModel.isRecording.observeAsState(false)
     val isImporting by viewModel.isImporting.observeAsState(false)
+    val progress by viewModel.importProgress.observeAsState()
     val fileName by viewModel.importedFileName.observeAsState()
     val transcript by viewModel.importedTranscript.observeAsState()
     val error by viewModel.importError.observeAsState()
@@ -82,9 +84,24 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
         ) { Text("Choose media file") }
         if (!isEngineReady) Text("Loading Russian speech model...")
         if (isImporting) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator()
-                Text("Transcribing...", modifier = Modifier.padding(start = 12.dp))
+            val percentage = progress?.percent
+            if (percentage != null) {
+                Text("Transcribing... $percentage%")
+                LinearProgressIndicator(
+                    progress = { percentage / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val remaining = progress?.secondsRemaining
+                Text(if (remaining != null) "About ${formatTime(remaining)} left" else "Estimating time left...")
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator()
+                    Text("Transcribing...", modifier = Modifier.padding(start = 12.dp))
+                }
+                val processed = progress?.secondsProcessed
+                if (processed != null) {
+                    Text("Processed ${formatTime(processed)} of audio; total duration unavailable")
+                }
             }
         }
         if (error != null) {
@@ -112,6 +129,9 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
         }
     }
 }
+
+private fun formatTime(seconds: Long): String =
+    "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
 
 private fun exportBaseName(fileName: String?): String = fileName.orEmpty()
     .substringBeforeLast('.')
