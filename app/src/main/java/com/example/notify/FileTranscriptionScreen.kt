@@ -55,7 +55,7 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
             val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
                 ?: "Recording"
-            viewModel.transcribeWav(uri, name)
+            viewModel.transcribeFile(uri, name)
         }
     }
     val textExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
@@ -74,12 +74,12 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text("Transcribe a file", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
-        Text("Russian speech · 16 kHz mono, 16-bit PCM WAV · up to 32 MB")
+        Text("Russian speech · audio or video supported by this device · up to 30 minutes")
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { filePicker.launch(arrayOf("*/*")) },
             enabled = isEngineReady && !isImporting && !isRecording
-        ) { Text("Choose WAV file") }
+        ) { Text("Choose media file") }
         if (!isEngineReady) Text("Loading Russian speech model...")
         if (isImporting) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -28,9 +28,9 @@ import com.example.notify.domain.Note;
 import com.example.notify.domain.Tag;
 import com.example.notify.domain.TextEntry;
 import com.example.notify.mapper.NoteMapper;
+import com.example.notify.stt.AndroidAudioDecoder;
 import com.example.notify.stt.SherpaOnnxEngine;
 import com.example.notify.stt.SpeechTranscriber;
-import com.example.notify.stt.PcmWavReader;
 import com.example.notify.utils.AssetUtils;
 
 import java.io.BufferedInputStream;
@@ -38,7 +38,6 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -100,7 +99,7 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<String> getImportError() { return importError; }
     public LiveData<Boolean> getIsImporting() { return isImporting; }
 
-    public void transcribeWav(Uri uri, String fileName) {
+    public void transcribeFile(Uri uri, String fileName) {
         if (!Boolean.TRUE.equals(isEngineReady.getValue())) {
             importError.setValue("The Russian speech model is still loading");
             return;
@@ -115,13 +114,12 @@ public class MainViewModel extends AndroidViewModel {
         importError.setValue(null);
         isImporting.setValue(true);
         new Thread(() -> {
-            try (InputStream input = getApplication().getContentResolver().openInputStream(uri)) {
-                if (input == null) throw new IOException("Could not open the selected file");
-                float[] samples = PcmWavReader.read(input);
+            try {
+                float[] samples = AndroidAudioDecoder.read(getApplication(), uri);
                 importedTranscript.postValue(transcriber.transcribeSamples(samples));
             } catch (Exception e) {
-                Log.e("MainViewModel", "Could not transcribe imported WAV", e);
-                importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this WAV file");
+                Log.e("MainViewModel", "Could not transcribe imported media", e);
+                importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this file");
             } finally {
                 isTranscribing.set(false);
                 isImporting.postValue(false);

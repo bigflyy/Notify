@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 
 /** Reads the simple WAV format accepted by the current Russian speech model. */
 public final class PcmWavReader {
-    private static final int MAX_AUDIO_BYTES = 32 * 1024 * 1024;
+    private static final int MAX_AUDIO_BYTES = 16000 * 2 * 60 * 30;
 
     private PcmWavReader() { }
 
@@ -48,7 +48,7 @@ public final class PcmWavReader {
             } else if ("data".equals(chunkId)) {
                 if (!hasFormat) throw new IOException("Invalid WAV file: format header is missing");
                 if (chunkSize == 0 || chunkSize > MAX_AUDIO_BYTES || chunkSize % 2 != 0) {
-                    throw new IOException("The WAV audio is empty or too large (32 MB maximum)");
+                    throw new IOException("The WAV audio is empty or longer than 30 minutes");
                 }
                 float[] audio = new float[(int) chunkSize / 2];
                 for (int i = 0; i < audio.length; i++) {
