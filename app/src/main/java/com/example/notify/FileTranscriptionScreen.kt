@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -25,8 +27,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -38,6 +43,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
@@ -49,6 +56,9 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     val isImporting by viewModel.isImporting.observeAsState(false)
     val isImportCancelling by viewModel.isImportCancelling.observeAsState(false)
     val importWasCancelled by viewModel.importWasCancelled.observeAsState(false)
+    val transcriptPartial by viewModel.importedTranscriptPartial.observeAsState(false)
+    val history by viewModel.transcriptionHistory.observeAsState(emptyList())
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     val progress by viewModel.importProgress.observeAsState()
     val fileName by viewModel.importedFileName.observeAsState()
     val transcript by viewModel.importedTranscript.observeAsState()
@@ -56,6 +66,7 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            showHistory = false
             val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
                 ?: "Recording"
@@ -84,6 +95,11 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
             onClick = { filePicker.launch(arrayOf("*/*")) },
             enabled = isEngineReady && !isImporting && !isRecording
         ) { Text("Choose media file") }
+        if (history.isNotEmpty()) {
+            TextButton(onClick = { showHistory = !showHistory }, enabled = !isImporting) {
+                Text(if (showHistory) "Back to transcript" else "History (${history.size})")
+            }
+        }
         if (!isEngineReady) Text("Loading Russian speech model...")
         if (isImporting) {
             val percentage = progress?.percent
@@ -110,20 +126,42 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
                 enabled = !isImportCancelling
             ) { Text(if (isImportCancelling) "Stopping..." else "Cancel") }
         }
-        if (importWasCancelled) {
-            Text(if (transcript.isNullOrBlank()) "Stopped before any speech was transcribed"
-                 else "Stopped — partial transcript")
-        } else if (isImporting && !transcript.isNullOrBlank()) {
+        if (isImporting && !transcript.isNullOrBlank()) {
             Text("Partial transcript — still transcribing")
+        } else if (transcriptPartial && !transcript.isNullOrBlank() && !showHistory) {
+            Text("Partial transcript")
+        } else if (importWasCancelled && transcript.isNullOrBlank()) {
+            Text("Stopped before any speech was transcribed")
         }
         if (error != null) {
             Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
         }
-        if (fileName != null) {
+        if (fileName != null && !showHistory) {
             Spacer(Modifier.height(16.dp))
             Text(fileName.orEmpty(), style = MaterialTheme.typography.titleMedium)
         }
-        if (transcript != null) {
+        if (showHistory || (transcript == null && !isImporting && history.isNotEmpty())) {
+            Text("Saved transcripts", style = MaterialTheme.typography.titleMedium)
+            LazyColumn(modifier = Modifier.weight(1f)) {
+                items(history, key = { it.id }) { entry ->
+                    TextButton(
+                        onClick = {
+                            viewModel.openSavedTranscript(entry.id)
+                            showHistory = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(entry.fileName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(entry.createdAt))} · ${if (entry.complete) "Complete" else "Partial"}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (transcript != null) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { clipboard.setText(AnnotatedString(transcript.orEmpty())) }, enabled = !transcript.isNullOrBlank()) {
                     Text("Copy")

@@ -33,6 +33,7 @@ import com.example.notify.stt.SherpaOnnxEngine;
 import com.example.notify.stt.SpeechTranscriber;
 import com.example.notify.stt.MediaDurationReader;
 import com.example.notify.stt.TranscriptionProgress;
+import com.example.notify.stt.TranscriptHistory;
 import com.example.notify.utils.AssetUtils;
 
 import java.io.BufferedInputStream;
@@ -44,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -52,6 +54,7 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<Boolean> isEngineReady = new MutableLiveData<>(false);
     private final NoteMapper noteMapper;
     private final SpeechTranscriber transcriber;
+    private final TranscriptHistory transcriptHistory;
 
     private final MutableLiveData<List<Note>> allNotes = new MutableLiveData<>();
     private final MutableLiveData<List<Tag>> allTags = new MutableLiveData<>();
@@ -63,6 +66,9 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<TranscriptionProgress> importProgress = new MutableLiveData<>();
     private final MutableLiveData<Boolean> isImportCancelling = new MutableLiveData<>(false);
     private final MutableLiveData<Boolean> importWasCancelled = new MutableLiveData<>(false);
+    private final MutableLiveData<Boolean> importedTranscriptPartial = new MutableLiveData<>(false);
+    private final MutableLiveData<List<TranscriptHistory.Entry>> transcriptionHistory =
+            new MutableLiveData<>(new ArrayList<>());
     private final AtomicBoolean cancelImport = new AtomicBoolean(false);
     private final Handler debounceHandler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
@@ -84,6 +90,7 @@ public class MainViewModel extends AndroidViewModel {
                 .build();
         noteMapper = new NoteMapper(db.noteDao());
         transcriber = new SpeechTranscriber(null);
+        transcriptHistory = new TranscriptHistory(application.getFilesDir());
         
         new Thread(() -> {
             if (transcriber.init(application)) {
@@ -92,6 +99,7 @@ public class MainViewModel extends AndroidViewModel {
         }).start();
         loadNotes();
         loadTags();
+        new Thread(this::refreshTranscriptHistory).start();
     }
 
     public LiveData<List<Note>> getAllNotes() { return allNotes; }
@@ -109,6 +117,44 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<TranscriptionProgress> getImportProgress() { return importProgress; }
     public LiveData<Boolean> getIsImportCancelling() { return isImportCancelling; }
     public LiveData<Boolean> getImportWasCancelled() { return importWasCancelled; }
+    public LiveData<Boolean> getImportedTranscriptPartial() { return importedTranscriptPartial; }
+    public LiveData<List<TranscriptHistory.Entry>> getTranscriptionHistory() { return transcriptionHistory; }
+
+    public void openSavedTranscript(String id) {
+        if (Boolean.TRUE.equals(isImporting.getValue())) return;
+        List<TranscriptHistory.Entry> entries = transcriptionHistory.getValue();
+        if (entries == null) return;
+        for (TranscriptHistory.Entry entry : entries) {
+            if (!entry.id.equals(id)) continue;
+            importedFileName.setValue(entry.fileName);
+            importedTranscript.setValue(entry.text);
+            importedTranscriptPartial.setValue(!entry.complete);
+            importWasCancelled.setValue(false);
+            importError.setValue(null);
+            return;
+        }
+    }
+
+    private void saveTranscript(String id, String fileName, String text, long createdAt,
+                                boolean complete) {
+        if (text.trim().isEmpty()) return;
+        try {
+            transcriptHistory.save(new TranscriptHistory.Entry(
+                    id, fileName, text, createdAt, complete));
+        } catch (IOException error) {
+            Log.e("MainViewModel", "Could not save transcript history", error);
+            importError.postValue("Could not save transcript history; please export this transcript");
+        }
+    }
+
+    private void refreshTranscriptHistory() {
+        try {
+            transcriptionHistory.postValue(transcriptHistory.list());
+        } catch (IOException error) {
+            Log.e("MainViewModel", "Could not load transcript history", error);
+            importError.postValue("Could not load transcript history");
+        }
+    }
 
     public void cancelFileTranscription() {
         if (Boolean.TRUE.equals(isImporting.getValue())) {
@@ -134,21 +180,25 @@ public class MainViewModel extends AndroidViewModel {
         cancelImport.set(false);
         isImportCancelling.setValue(false);
         importWasCancelled.setValue(false);
+        importedTranscriptPartial.setValue(false);
         isImporting.setValue(true);
         new Thread(() -> {
+            String id = UUID.randomUUID().toString();
+            long createdAt = System.currentTimeMillis();
+            StringBuilder partial = new StringBuilder();
             try {
                 long durationMillis = MediaDurationReader.readMillis(getApplication(), uri);
                 if (cancelImport.get()) throw new CancellationException();
                 importProgress.postValue(TranscriptionProgress.calculate(0, durationMillis, 0));
                 long[] started = { SystemClock.elapsedRealtime() };
                 long[] previous = { 0 };
-                StringBuilder partial = new StringBuilder();
                 String result = transcriber.transcribeMedia(getApplication(), uri, samples -> {
                     long now = SystemClock.elapsedRealtime();
                     if (samples < previous[0] || (samples == 0 && partial.length() > 0)) {
                         started[0] = now;
                         partial.setLength(0);
                         importedTranscript.postValue(null);
+                        transcriptHistory.delete(id);
                     }
                     previous[0] = samples;
                     importProgress.postValue(TranscriptionProgress.calculate(
@@ -157,15 +207,20 @@ public class MainViewModel extends AndroidViewModel {
                     if (partial.length() > 0) partial.append(' ');
                     partial.append(segment);
                     importedTranscript.postValue(partial.toString());
+                    importedTranscriptPartial.postValue(true);
+                    saveTranscript(id, fileName, partial.toString(), createdAt, false);
                 }, cancelImport::get);
                 if (cancelImport.get()) throw new CancellationException();
                 importedTranscript.postValue(result);
+                importedTranscriptPartial.postValue(false);
+                saveTranscript(id, fileName, result, createdAt, true);
             } catch (CancellationException ignored) {
                 importWasCancelled.postValue(true);
             } catch (Exception e) {
                 Log.e("MainViewModel", "Could not transcribe imported media", e);
                 importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this file");
             } finally {
+                refreshTranscriptHistory();
                 isTranscribing.set(false);
                 isImporting.postValue(false);
                 isImportCancelling.postValue(false);
