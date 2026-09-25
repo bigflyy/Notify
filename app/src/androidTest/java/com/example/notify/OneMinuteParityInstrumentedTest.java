@@ -23,6 +23,11 @@ import java.io.FileInputStream;
 import java.io.PrintWriter;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 @RunWith(AndroidJUnit4.class)
 public class OneMinuteParityInstrumentedTest {
@@ -47,10 +52,28 @@ public class OneMinuteParityInstrumentedTest {
             String original = transcriber.transcribeSamples(samples);
             long originalMillis = SystemClock.elapsedRealtime() - originalStart;
             long streamingStart = SystemClock.elapsedRealtime();
-            String result = transcriber.transcribeMedia(context, Uri.fromFile(file));
+            List<String> completedSegments = new ArrayList<>();
+            String result = transcriber.transcribeMedia(context, Uri.fromFile(file),
+                    processed -> { }, completedSegments::add, () -> false);
             long streamingMillis = SystemClock.elapsedRealtime() - streamingStart;
             assertFalse(result.isEmpty());
             assertEquals(original, result);
+            assertEquals(result, String.join(" ", completedSegments));
+
+            AtomicBoolean cancel = new AtomicBoolean();
+            AtomicLong processedAtCancel = new AtomicLong();
+            List<String> partialSegments = new ArrayList<>();
+            try {
+                transcriber.transcribeMedia(context, Uri.fromFile(file),
+                        processedAtCancel::set, segment -> {
+                            partialSegments.add(segment);
+                            cancel.set(true);
+                        }, cancel::get);
+                throw new AssertionError("Cancellation should stop the file");
+            } catch (CancellationException expected) {
+                assertFalse(partialSegments.isEmpty());
+                assertTrue(processedAtCancel.get() < samples.length);
+            }
             try (PrintWriter metrics = new PrintWriter(
                     new File(context.getCacheDir(), "benchmark-result.txt"))) {
                 metrics.println("audio_ms=56450 original_ms=" + originalMillis

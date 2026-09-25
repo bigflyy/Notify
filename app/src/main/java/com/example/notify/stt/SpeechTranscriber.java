@@ -15,6 +15,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 public class SpeechTranscriber {
     private static final int SAMPLE_RATE = 16000;
@@ -62,7 +65,14 @@ public class SpeechTranscriber {
     }
 
     public String transcribeMedia(Context context, Uri uri, ProgressListener progress) throws IOException {
-        try (SherpaOnnxEngine.StreamingSession session = sttEngine.startStreaming(SAMPLE_RATE)) {
+        return transcribeMedia(context, uri, progress, text -> { }, () -> false);
+    }
+
+    public String transcribeMedia(Context context, Uri uri, ProgressListener progress,
+                                  Consumer<String> onSegment, BooleanSupplier isCancelled)
+            throws IOException {
+        try (SherpaOnnxEngine.StreamingSession session =
+                     sttEngine.startStreaming(SAMPLE_RATE, onSegment, isCancelled)) {
             long[] processed = { 0 };
             try {
                 AndroidAudioDecoder.stream(context, uri, audio -> {
@@ -72,18 +82,21 @@ public class SpeechTranscriber {
                 });
                 return session.finish();
             } catch (IOException androidError) {
+                if (isCancelled.getAsBoolean()) throw new CancellationException("Transcription cancelled");
                 // Restart recognition: Android may have decoded some audio before failing.
                 progress.onProcessed(0);
                 processed[0] = 0;
-                try (SherpaOnnxEngine.StreamingSession fallback = sttEngine.startStreaming(SAMPLE_RATE)) {
+                try (SherpaOnnxEngine.StreamingSession fallback =
+                             sttEngine.startStreaming(SAMPLE_RATE, onSegment, isCancelled)) {
                     try {
-                        FfmpegAudioDecoder.stream(context, uri, audio -> {
+                        FfmpegAudioDecoder.stream(context, uri, isCancelled, audio -> {
                             fallback.accept(audio);
                             processed[0] += audio.length;
                             progress.onProcessed(processed[0]);
                         });
                         return fallback.finish();
                     } catch (IOException ffmpegError) {
+                        if (isCancelled.getAsBoolean()) throw new CancellationException("Transcription cancelled");
                         ffmpegError.addSuppressed(androidError);
                         throw ffmpegError;
                     }

@@ -8,6 +8,7 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
 /** Reads a nonblocking FFmpeg pipe without storing the converted file. */
@@ -18,6 +19,12 @@ final class FfmpegPcmReader {
 
     static void stream(FileDescriptor pipe, BooleanSupplier conversionFinished,
                        Mono16kBuilder.ChunkConsumer consumer) throws IOException {
+        stream(pipe, conversionFinished, () -> false, consumer);
+    }
+
+    static void stream(FileDescriptor pipe, BooleanSupplier conversionFinished,
+                       BooleanSupplier isCancelled, Mono16kBuilder.ChunkConsumer consumer)
+            throws IOException {
         stream(new InputStream() {
             @Override public int read() throws IOException {
                 byte[] one = new byte[1];
@@ -32,16 +39,23 @@ final class FfmpegPcmReader {
                     throw new IOException("Cannot read converted audio", error);
                 }
             }
-        }, conversionFinished, consumer);
+        }, conversionFinished, isCancelled, consumer);
     }
 
     static void stream(InputStream input, BooleanSupplier conversionFinished,
                        Mono16kBuilder.ChunkConsumer consumer) throws IOException {
+        stream(input, conversionFinished, () -> false, consumer);
+    }
+
+    static void stream(InputStream input, BooleanSupplier conversionFinished,
+                       BooleanSupplier isCancelled, Mono16kBuilder.ChunkConsumer consumer)
+            throws IOException {
         byte[] bytes = new byte[CHUNK_SAMPLES * 4];
         float[] samples = new float[CHUNK_SAMPLES];
         int pending = 0;
         int count = 0;
         while (true) {
+            if (isCancelled.getAsBoolean()) throw new CancellationException("Transcription cancelled");
             int size = input.read(bytes, pending, bytes.length - pending);
             if (size <= 0) {
                 if (conversionFinished.getAsBoolean()) break;

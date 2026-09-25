@@ -14,6 +14,7 @@ import com.arthenica.ffmpegkit.ReturnCode;
 import java.io.FileDescriptor;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 /** Streams formats unsupported by Android's decoder as mono 16 kHz PCM. */
 public final class FfmpegAudioDecoder {
@@ -21,6 +22,11 @@ public final class FfmpegAudioDecoder {
 
     public static void stream(Context context, Uri uri, Mono16kBuilder.ChunkConsumer consumer)
             throws IOException {
+        stream(context, uri, () -> false, consumer);
+    }
+
+    public static void stream(Context context, Uri uri, BooleanSupplier isCancelled,
+                              Mono16kBuilder.ChunkConsumer consumer) throws IOException {
         String input = "content".equals(uri.getScheme())
                 ? FFmpegKitConfig.getSafParameterForRead(context, uri)
                 : uri.getPath();
@@ -38,7 +44,7 @@ public final class FfmpegAudioDecoder {
                     "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
                     "-c:a", "pcm_f32le", "-f", "f32le", "-y", pipe
             }, finished::set);
-            FfmpegPcmReader.stream(reader, () -> finished.get() != null, consumer);
+            FfmpegPcmReader.stream(reader, () -> finished.get() != null, isCancelled, consumer);
             FFmpegSession result = finished.get();
             if (result == null || !ReturnCode.isSuccess(result.getReturnCode())) {
                 throw new IOException("FFmpeg could not decode this file"

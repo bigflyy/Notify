@@ -44,6 +44,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<Boolean> isRecording = new MutableLiveData<>(false);
@@ -59,6 +61,9 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<String> importError = new MutableLiveData<>();
     private final MutableLiveData<Boolean> isImporting = new MutableLiveData<>(false);
     private final MutableLiveData<TranscriptionProgress> importProgress = new MutableLiveData<>();
+    private final MutableLiveData<Boolean> isImportCancelling = new MutableLiveData<>(false);
+    private final MutableLiveData<Boolean> importWasCancelled = new MutableLiveData<>(false);
+    private final AtomicBoolean cancelImport = new AtomicBoolean(false);
     private final Handler debounceHandler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -102,6 +107,15 @@ public class MainViewModel extends AndroidViewModel {
     public LiveData<String> getImportError() { return importError; }
     public LiveData<Boolean> getIsImporting() { return isImporting; }
     public LiveData<TranscriptionProgress> getImportProgress() { return importProgress; }
+    public LiveData<Boolean> getIsImportCancelling() { return isImportCancelling; }
+    public LiveData<Boolean> getImportWasCancelled() { return importWasCancelled; }
+
+    public void cancelFileTranscription() {
+        if (Boolean.TRUE.equals(isImporting.getValue())) {
+            cancelImport.set(true);
+            isImportCancelling.setValue(true);
+        }
+    }
 
     public void transcribeFile(Uri uri, String fileName) {
         if (!Boolean.TRUE.equals(isEngineReady.getValue())) {
@@ -117,26 +131,44 @@ public class MainViewModel extends AndroidViewModel {
         importedTranscript.setValue(null);
         importError.setValue(null);
         importProgress.setValue(null);
+        cancelImport.set(false);
+        isImportCancelling.setValue(false);
+        importWasCancelled.setValue(false);
         isImporting.setValue(true);
         new Thread(() -> {
             try {
                 long durationMillis = MediaDurationReader.readMillis(getApplication(), uri);
+                if (cancelImport.get()) throw new CancellationException();
                 importProgress.postValue(TranscriptionProgress.calculate(0, durationMillis, 0));
                 long[] started = { SystemClock.elapsedRealtime() };
                 long[] previous = { 0 };
-                importedTranscript.postValue(transcriber.transcribeMedia(getApplication(), uri, samples -> {
+                StringBuilder partial = new StringBuilder();
+                String result = transcriber.transcribeMedia(getApplication(), uri, samples -> {
                     long now = SystemClock.elapsedRealtime();
-                    if (samples < previous[0]) started[0] = now;
+                    if (samples < previous[0] || (samples == 0 && partial.length() > 0)) {
+                        started[0] = now;
+                        partial.setLength(0);
+                        importedTranscript.postValue(null);
+                    }
                     previous[0] = samples;
                     importProgress.postValue(TranscriptionProgress.calculate(
                             samples, durationMillis, now - started[0]));
-                }));
+                }, segment -> {
+                    if (partial.length() > 0) partial.append(' ');
+                    partial.append(segment);
+                    importedTranscript.postValue(partial.toString());
+                }, cancelImport::get);
+                if (cancelImport.get()) throw new CancellationException();
+                importedTranscript.postValue(result);
+            } catch (CancellationException ignored) {
+                importWasCancelled.postValue(true);
             } catch (Exception e) {
                 Log.e("MainViewModel", "Could not transcribe imported media", e);
                 importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this file");
             } finally {
                 isTranscribing.set(false);
                 isImporting.postValue(false);
+                isImportCancelling.postValue(false);
             }
         }).start();
     }

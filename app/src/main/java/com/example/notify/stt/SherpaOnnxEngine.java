@@ -12,6 +12,9 @@ import com.k2fsa.sherpa.onnx.SileroVadModelConfig;
 import android.util.Log;
 import java.io.File;
 import java.util.Arrays;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 public class SherpaOnnxEngine {
     // Распознователь речи
@@ -117,8 +120,13 @@ public class SherpaOnnxEngine {
     }
 
     public StreamingSession startStreaming(int sampleRate) {
+        return startStreaming(sampleRate, text -> { }, () -> false);
+    }
+
+    public StreamingSession startStreaming(int sampleRate, Consumer<String> onSegment,
+                                           BooleanSupplier isCancelled) {
         if (recognizer == null) throw new IllegalStateException("Engine not initialized");
-        return new StreamingSession(sampleRate);
+        return new StreamingSession(sampleRate, onSegment, isCancelled);
     }
 
     /** Keeps VAD state across decoder chunks, so a word can cross a chunk boundary. */
@@ -127,17 +135,28 @@ public class SherpaOnnxEngine {
         private final int sampleRate;
         private final float[] window = new float[windowSize];
         private final StringBuilder resultText = new StringBuilder();
+        private final Consumer<String> onSegment;
+        private final BooleanSupplier isCancelled;
         private int windowLength;
         private boolean closed;
 
-        private StreamingSession(int sampleRate) {
+        private StreamingSession(int sampleRate, Consumer<String> onSegment,
+                                 BooleanSupplier isCancelled) {
             this.sampleRate = sampleRate;
+            this.onSegment = onSegment;
+            this.isCancelled = isCancelled;
+        }
+
+        private void checkCancelled() {
+            if (isCancelled.getAsBoolean()) throw new CancellationException("Transcription cancelled");
         }
 
         public void accept(float[] audio) {
             if (closed) throw new IllegalStateException("Transcription session is closed");
+            checkCancelled();
             int position = 0;
             while (position < audio.length) {
+                checkCancelled();
                 int count = Math.min(windowSize - windowLength, audio.length - position);
                 System.arraycopy(audio, position, window, windowLength, count);
                 windowLength += count;
@@ -152,24 +171,31 @@ public class SherpaOnnxEngine {
 
         public String finish() {
             if (closed) throw new IllegalStateException("Transcription session is closed");
+            checkCancelled();
             if (windowLength > 0) {
                 vad.acceptWaveform(Arrays.copyOf(window, windowLength));
                 windowLength = 0;
             }
             vad.flush();
             drainSegments();
+            checkCancelled();
             return resultText.toString().trim();
         }
 
         private void drainSegments() {
             while (!vad.empty()) {
+                checkCancelled();
                 SpeechSegment segment = vad.front();
                 OfflineStream stream = recognizer.createStream();
                 try {
                     stream.acceptWaveform(segment.getSamples(), sampleRate);
                     recognizer.decode(stream);
+                    checkCancelled();
                     String text = recognizer.getResult(stream).getText();
-                    if (!text.isEmpty()) resultText.append(text).append(' ');
+                    if (!text.isEmpty()) {
+                        resultText.append(text).append(' ');
+                        onSegment.accept(text);
+                    }
                 } finally {
                     stream.release();
                     vad.pop();

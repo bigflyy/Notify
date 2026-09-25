@@ -11,6 +11,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class FfmpegPcmReaderTest {
     @Test public void streamsPartialFramesAndBoundsChunkSize() throws IOException {
@@ -29,5 +31,22 @@ public class FfmpegPcmReaderTest {
         assertEquals(8, chunks.get(1).length);
         assertEquals(0f, chunks.get(0)[3], 0f);
         assertEquals(8199 / 8200f, chunks.get(1)[7], 0f);
+    }
+
+    @Test public void stopsWhileConversionPipeIsIdle() throws IOException {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        InputStream idle = new InputStream() {
+            @Override public int read() { return 0; }
+            @Override public int read(byte[] bytes, int offset, int length) {
+                cancelled.set(true);
+                return 0;
+            }
+        };
+        try {
+            FfmpegPcmReader.stream(idle, () -> false, cancelled::get, samples -> { });
+            throw new AssertionError("Idle conversion should stop after cancellation");
+        } catch (CancellationException expected) {
+            assertEquals(true, cancelled.get());
+        }
     }
 }

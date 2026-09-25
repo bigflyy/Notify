@@ -47,6 +47,8 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     val isEngineReady by viewModel.isEngineReady.observeAsState(false)
     val isRecording by viewModel.isRecording.observeAsState(false)
     val isImporting by viewModel.isImporting.observeAsState(false)
+    val isImportCancelling by viewModel.isImportCancelling.observeAsState(false)
+    val importWasCancelled by viewModel.importWasCancelled.observeAsState(false)
     val progress by viewModel.importProgress.observeAsState()
     val fileName by viewModel.importedFileName.observeAsState()
     val transcript by viewModel.importedTranscript.observeAsState()
@@ -103,6 +105,16 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
                     Text("Processed ${formatTime(processed)} of audio; total duration unavailable")
                 }
             }
+            TextButton(
+                onClick = viewModel::cancelFileTranscription,
+                enabled = !isImportCancelling
+            ) { Text(if (isImportCancelling) "Stopping..." else "Cancel") }
+        }
+        if (importWasCancelled) {
+            Text(if (transcript.isNullOrBlank()) "Stopped before any speech was transcribed"
+                 else "Stopped — partial transcript")
+        } else if (isImporting && !transcript.isNullOrBlank()) {
+            Text("Partial transcript — still transcribing")
         }
         if (error != null) {
             Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
