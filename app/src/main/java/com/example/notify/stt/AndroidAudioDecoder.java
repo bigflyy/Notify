@@ -16,7 +16,7 @@ import java.nio.ByteOrder;
 public final class AndroidAudioDecoder {
     private AndroidAudioDecoder() { }
 
-    public static float[] read(Context context, Uri uri) throws IOException {
+    public static void stream(Context context, Uri uri, Mono16kBuilder.ChunkConsumer consumer) throws IOException {
         MediaExtractor extractor = new MediaExtractor();
         try {
             try {
@@ -24,7 +24,10 @@ public final class AndroidAudioDecoder {
             } catch (IOException | RuntimeException error) {
                 // Some devices cannot extract a simple PCM WAV; keep that format usable.
                 try (InputStream input = context.getContentResolver().openInputStream(uri)) {
-                    if (input != null) return PcmWavReader.read(input);
+                    if (input != null) {
+                        PcmWavReader.stream(input, consumer);
+                        return;
+                    }
                 } catch (IOException ignored) { }
                 throw new IOException("This device cannot read the selected media file", error);
             }
@@ -34,8 +37,9 @@ public final class AndroidAudioDecoder {
                 String mime = format.getString(MediaFormat.KEY_MIME);
                 if (mime == null || !mime.startsWith("audio/")) continue;
                 extractor.selectTrack(track);
-                if ("audio/raw".equals(mime)) return readRaw(extractor, format);
-                return decode(extractor, format, mime);
+                if ("audio/raw".equals(mime)) readRaw(extractor, format, consumer);
+                else decode(extractor, format, mime, consumer);
+                return;
             }
             throw new IOException("The selected file has no supported audio track");
         } catch (RuntimeException error) {
@@ -45,11 +49,12 @@ public final class AndroidAudioDecoder {
         }
     }
 
-    private static float[] readRaw(MediaExtractor extractor, MediaFormat format) throws IOException {
+    private static void readRaw(MediaExtractor extractor, MediaFormat format,
+                                Mono16kBuilder.ChunkConsumer consumer) throws IOException {
         int rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
         int channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
         int encoding = pcmEncoding(format);
-        Mono16kBuilder result = new Mono16kBuilder(rate);
+        Mono16kBuilder result = new Mono16kBuilder(rate, consumer);
         ByteBuffer buffer = ByteBuffer.allocateDirect(1024 * 1024);
         while (true) {
             buffer.clear();
@@ -60,10 +65,11 @@ public final class AndroidAudioDecoder {
             appendPcm(buffer, channels, encoding, result);
             extractor.advance();
         }
-        return result.toArray();
+        result.finish();
     }
 
-    private static float[] decode(MediaExtractor extractor, MediaFormat format, String mime) throws IOException {
+    private static void decode(MediaExtractor extractor, MediaFormat format, String mime,
+                               Mono16kBuilder.ChunkConsumer consumer) throws IOException {
         MediaCodec codec = MediaCodec.createDecoderByType(mime);
         boolean started = false;
         try {
@@ -103,7 +109,7 @@ public final class AndroidAudioDecoder {
                 if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat output = codec.getOutputFormat();
                     int rate = output.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-                    if (result == null) result = new Mono16kBuilder(rate);
+                    if (result == null) result = new Mono16kBuilder(rate, consumer);
                     else if (outputRate != rate) throw new IOException("The audio sample rate changed during decoding");
                     outputRate = rate;
                     channels = output.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
@@ -115,7 +121,7 @@ public final class AndroidAudioDecoder {
                         outputRate = output.getInteger(MediaFormat.KEY_SAMPLE_RATE);
                         channels = output.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
                         encoding = pcmEncoding(output);
-                        result = new Mono16kBuilder(outputRate);
+                        result = new Mono16kBuilder(outputRate, consumer);
                     }
                     if (info.size > 0) {
                         ByteBuffer output = codec.getOutputBuffer(outputIndex);
@@ -132,7 +138,7 @@ public final class AndroidAudioDecoder {
                 if (idleCycles > 500) throw new IOException("Audio decoding stopped responding");
             }
             if (result == null) throw new IOException("No audio samples found in the file");
-            return result.toArray();
+            result.finish();
         } finally {
             if (started) codec.stop();
             codec.release();

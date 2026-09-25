@@ -28,7 +28,6 @@ import com.example.notify.domain.Note;
 import com.example.notify.domain.Tag;
 import com.example.notify.domain.TextEntry;
 import com.example.notify.mapper.NoteMapper;
-import com.example.notify.stt.AndroidAudioDecoder;
 import com.example.notify.stt.SherpaOnnxEngine;
 import com.example.notify.stt.SpeechTranscriber;
 import com.example.notify.utils.AssetUtils;
@@ -115,8 +114,7 @@ public class MainViewModel extends AndroidViewModel {
         isImporting.setValue(true);
         new Thread(() -> {
             try {
-                float[] samples = AndroidAudioDecoder.read(getApplication(), uri);
-                importedTranscript.postValue(transcriber.transcribeSamples(samples));
+                importedTranscript.postValue(transcriber.transcribeMedia(getApplication(), uri));
             } catch (Exception e) {
                 Log.e("MainViewModel", "Could not transcribe imported media", e);
                 importError.postValue(e.getMessage() != null ? e.getMessage() : "Could not transcribe this file");

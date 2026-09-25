@@ -8,6 +8,7 @@ import java.io.IOException;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class Mono16kBuilderTest {
     @Test
@@ -32,5 +33,26 @@ public class Mono16kBuilderTest {
         float[] result = audio.toArray();
         assertEquals(16000, result.length);
         assertEquals(0.25f, result[15999], 0.0001f);
+    }
+
+    @Test
+    public void streamsAcrossChunkBoundaries() throws IOException {
+        long[] count = {0};
+        Mono16kBuilder audio = new Mono16kBuilder(44100, chunk -> {
+            assertTrue(chunk.length <= 8192);
+            count[0] += chunk.length;
+        });
+        for (int i = 0; i < 44100; i++) audio.addFrame(0.25f);
+        audio.finish();
+        assertEquals(16000, count[0]);
+    }
+
+    @Test
+    public void streamsPastThirtyMinutesWithoutAnAudioBufferLimit() throws IOException {
+        long[] count = {0};
+        Mono16kBuilder audio = new Mono16kBuilder(1, chunk -> count[0] += chunk.length);
+        for (int i = 0; i < 1802; i++) audio.addFrame(0.1f);
+        audio.finish();
+        assertTrue(count[0] > 16000L * 60 * 30);
     }
 }

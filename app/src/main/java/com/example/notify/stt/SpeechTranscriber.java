@@ -5,6 +5,7 @@ import android.content.Context;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.util.Log;
 
 import com.example.notify.utils.AssetUtils;
@@ -50,6 +51,13 @@ public class SpeechTranscriber {
 
     public String transcribeSamples(float[] samples) {
         return sttEngine.transcribe(samples, SAMPLE_RATE);
+    }
+
+    public String transcribeMedia(Context context, Uri uri) throws IOException {
+        try (SherpaOnnxEngine.StreamingSession session = sttEngine.startStreaming(SAMPLE_RATE)) {
+            AndroidAudioDecoder.stream(context, uri, session::accept);
+            return session.finish();
+        }
     }
 
     @SuppressLint("MissingPermission")

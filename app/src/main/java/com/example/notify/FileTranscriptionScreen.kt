@@ -74,7 +74,7 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text("Transcribe a file", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
-        Text("Russian speech · audio or video supported by this device · up to 30 minutes")
+        Text("Russian speech · audio or video supported by this device")
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { filePicker.launch(arrayOf("*/*")) },

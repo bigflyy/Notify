@@ -83,46 +83,106 @@ public class SherpaOnnxEngine {
     public String transcribe(float[] audio, int sampleRate) {
         if (recognizer == null) return "Engine not initialized";
 
-        // Create VAD instance
         Vad vad = new Vad(null, vadConfig);
-        
-        // Window-based processing
         for (int i = 0; i + windowSize <= audio.length; i += windowSize) {
             float[] window = Arrays.copyOfRange(audio, i, i + windowSize);
             vad.acceptWaveform(window);
         }
-        
-        // Handle the last partial window if it exists
         int remaining = audio.length % windowSize;
         if (remaining > 0) {
             float[] lastWindow = Arrays.copyOfRange(audio, audio.length - remaining, audio.length);
             vad.acceptWaveform(lastWindow);
         }
-
         vad.flush();
 
         StringBuilder resultText = new StringBuilder();
-
-        // Iterate through detected segments
         while (!vad.empty()) {
             SpeechSegment segment = vad.front();
             float[] segmentSamples = segment.getSamples();
-            
+
             OfflineStream stream = recognizer.createStream();
             stream.acceptWaveform(segmentSamples, sampleRate);
             recognizer.decode(stream);
-            
+
             String text = recognizer.getResult(stream).getText();
             if (!text.isEmpty()) {
                 resultText.append(text).append(" ");
             }
-            
+
             stream.release();
             vad.pop();
         }
-
         vad.release();
         return resultText.toString().trim();
+    }
+
+    public StreamingSession startStreaming(int sampleRate) {
+        if (recognizer == null) throw new IllegalStateException("Engine not initialized");
+        return new StreamingSession(sampleRate);
+    }
+
+    /** Keeps VAD state across decoder chunks, so a word can cross a chunk boundary. */
+    public final class StreamingSession implements AutoCloseable {
+        private final Vad vad = new Vad(null, vadConfig);
+        private final int sampleRate;
+        private final float[] window = new float[windowSize];
+        private final StringBuilder resultText = new StringBuilder();
+        private int windowLength;
+        private boolean closed;
+
+        private StreamingSession(int sampleRate) {
+            this.sampleRate = sampleRate;
+        }
+
+        public void accept(float[] audio) {
+            if (closed) throw new IllegalStateException("Transcription session is closed");
+            int position = 0;
+            while (position < audio.length) {
+                int count = Math.min(windowSize - windowLength, audio.length - position);
+                System.arraycopy(audio, position, window, windowLength, count);
+                windowLength += count;
+                position += count;
+                if (windowLength == windowSize) {
+                    vad.acceptWaveform(Arrays.copyOf(window, windowSize));
+                    windowLength = 0;
+                    drainSegments();
+                }
+            }
+        }
+
+        public String finish() {
+            if (closed) throw new IllegalStateException("Transcription session is closed");
+            if (windowLength > 0) {
+                vad.acceptWaveform(Arrays.copyOf(window, windowLength));
+                windowLength = 0;
+            }
+            vad.flush();
+            drainSegments();
+            return resultText.toString().trim();
+        }
+
+        private void drainSegments() {
+            while (!vad.empty()) {
+                SpeechSegment segment = vad.front();
+                OfflineStream stream = recognizer.createStream();
+                try {
+                    stream.acceptWaveform(segment.getSamples(), sampleRate);
+                    recognizer.decode(stream);
+                    String text = recognizer.getResult(stream).getText();
+                    if (!text.isEmpty()) resultText.append(text).append(' ');
+                } finally {
+                    stream.release();
+                    vad.pop();
+                }
+            }
+        }
+
+        @Override public void close() {
+            if (!closed) {
+                vad.release();
+                closed = true;
+            }
+        }
     }
 
     public void free() {

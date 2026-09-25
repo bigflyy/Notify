@@ -30,6 +30,19 @@ public class PcmWavReaderTest {
     }
 
     @Test
+    public void streamsBundledExampleRecording() throws IOException {
+        String path = "src/main/assets/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/test_wavs/example.wav";
+        long[] count = {0};
+        try (FileInputStream input = new FileInputStream(path)) {
+            PcmWavReader.stream(input, chunk -> {
+                if (chunk.length > 8192) throw new AssertionError("WAV chunk is too large");
+                count[0] += chunk.length;
+            });
+        }
+        assertEquals(180640, count[0]);
+    }
+
+    @Test
     public void rejectsUnsupportedSampleRate() throws IOException {
         IOException error = assertThrows(IOException.class,
                 () -> PcmWavReader.read(new ByteArrayInputStream(wav(1, 44100, (short) 100))));
