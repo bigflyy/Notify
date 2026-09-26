@@ -33,19 +33,12 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the license files under
 
 ## Versions
 
-- `main`: latest tested application and standalone repository setup.
-- `stable/original`: original stable version from the previous repository's `main`.
-- `feature/*`: preserved development versions, including the latest transcript browser.
+- `main`: latest tested application.
+- `stable/original`: original stable version.
+- `feature/*`: development versions, including the latest transcript browser.
 
-The project history was extracted from `lab04/Notify` in
-`bigflyy/Object-oriented-analysis-and-design-2`. Notify's 22 existing commits and
-all feature branches were preserved without the unrelated coursework. Commit IDs
-changed because the project now lives at the repository root. The source repository
-and original local project remain intact.
-
-The large models and native library were not tracked in the old repository and
-are added on `main` during migration. When building an older version, retain or
-restore the required binary dependencies from `main`.
+When building an older version, retain or restore the required speech models and
+native library from `main`.
 
 ## Phone UI tests
 
