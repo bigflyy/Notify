@@ -70,6 +70,7 @@ public class MainViewModel extends AndroidViewModel {
     private final MutableLiveData<List<TranscriptHistory.Entry>> transcriptionHistory =
             new MutableLiveData<>(new ArrayList<>());
     private final AtomicBoolean cancelImport = new AtomicBoolean(false);
+    private String selectedTranscriptId;
     private final Handler debounceHandler = new Handler(Looper.getMainLooper());
     private Runnable saveRunnable;
 
@@ -126,6 +127,7 @@ public class MainViewModel extends AndroidViewModel {
         if (entries == null) return;
         for (TranscriptHistory.Entry entry : entries) {
             if (!entry.id.equals(id)) continue;
+            selectedTranscriptId = id;
             importedFileName.setValue(entry.fileName);
             importedTranscript.setValue(entry.text);
             importedTranscriptPartial.setValue(!entry.complete);
@@ -145,6 +147,31 @@ public class MainViewModel extends AndroidViewModel {
             Log.e("MainViewModel", "Could not save transcript history", error);
             importError.postValue("Could not save transcript history; please export this transcript");
         }
+    }
+
+    public void deleteSavedTranscript(String id) {
+        if (Boolean.TRUE.equals(isImporting.getValue())) return;
+        new Thread(() -> {
+            try {
+                if (!transcriptHistory.delete(id)) throw new IOException("Transcript could not be deleted");
+                List<TranscriptHistory.Entry> remaining = transcriptHistory.list();
+                debounceHandler.post(() -> {
+                    transcriptionHistory.setValue(remaining);
+                    if (Objects.equals(selectedTranscriptId, id)) {
+                        selectedTranscriptId = null;
+                        importedFileName.setValue(null);
+                        importedTranscript.setValue(null);
+                        importedTranscriptPartial.setValue(false);
+                        importWasCancelled.setValue(false);
+                        importProgress.setValue(null);
+                        importError.setValue(null);
+                    }
+                });
+            } catch (Exception error) {
+                Log.e("MainViewModel", "Could not delete saved transcript", error);
+                importError.postValue("Could not delete this transcript");
+            }
+        }).start();
     }
 
     private void refreshTranscriptHistory() {
@@ -182,8 +209,9 @@ public class MainViewModel extends AndroidViewModel {
         importWasCancelled.setValue(false);
         importedTranscriptPartial.setValue(false);
         isImporting.setValue(true);
+        String id = UUID.randomUUID().toString();
+        selectedTranscriptId = id;
         new Thread(() -> {
-            String id = UUID.randomUUID().toString();
             long createdAt = System.currentTimeMillis();
             StringBuilder partial = new StringBuilder();
             try {

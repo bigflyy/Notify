@@ -830,7 +830,7 @@ fun NoteDeleteButton(note: com.example.notify.domain.Note, onDelete: () -> Unit)
 }
 
 @Composable
-private fun ConfirmDeleteDialog(
+internal fun ConfirmDeleteDialog(
     title: String,
     message: String,
     onDismiss: () -> Unit,

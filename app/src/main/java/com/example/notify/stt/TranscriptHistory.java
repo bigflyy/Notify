@@ -89,8 +89,11 @@ public final class TranscriptHistory {
         return result;
     }
 
-    public synchronized void delete(String id) {
+    public synchronized boolean delete(String id) {
         UUID.fromString(id);
         new AtomicFile(new File(directory, id + ".json")).delete();
+        return !new File(directory, id + ".json").exists()
+                && !new File(directory, id + ".json.bak").exists()
+                && !new File(directory, id + ".json.new").exists();
     }
 }

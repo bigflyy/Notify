@@ -26,11 +26,10 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -47,8 +46,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
@@ -63,6 +60,7 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     val transcriptPartial by viewModel.importedTranscriptPartial.observeAsState(false)
     val history by viewModel.transcriptionHistory.observeAsState(emptyList())
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(history.isEmpty()) { if (history.isEmpty()) showHistory = false }
     val progress by viewModel.importProgress.observeAsState()
     val fileName by viewModel.importedFileName.observeAsState()
     val transcript by viewModel.importedTranscript.observeAsState()
@@ -151,24 +149,14 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
             Spacer(Modifier.height(12.dp))
             LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(history, key = { it.id }) { entry ->
-                    Card(
-                        onClick = {
+                    SavedTranscriptCard(
+                        entry = entry,
+                        onOpen = {
                             viewModel.openSavedTranscript(entry.id)
                             showHistory = false
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                            Text(entry.fileName, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(entry.createdAt))} · ${if (entry.complete) "Complete" else "Partial"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                        onDelete = { viewModel.deleteSavedTranscript(entry.id) }
+                    )
                 }
             }
         } else if (transcript != null) {
