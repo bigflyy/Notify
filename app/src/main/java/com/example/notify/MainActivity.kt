@@ -70,18 +70,21 @@ class MainActivity : ComponentActivity() {
 
                 val currentNote by viewModel.currentNote.observeAsState()
                 var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+                var transcriptOpen by rememberSaveable { mutableStateOf(false) }
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
                     topBar = {
                         TopAppBar(
-                            title = { Text(if (currentNote != null) "Edit note" else "Notify") },
+                            title = { Text(if (currentNote != null) "Edit note" else if (transcriptOpen) "Transcript" else "Notify") },
                             navigationIcon = {
                                 if (currentNote != null) {
                                     IconButton(onClick = {
                                         viewModel.stopAudio()
                                         viewModel.selectNote(null)
                                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to notes") }
+                                } else if (transcriptOpen) {
+                                    TranscriptBackButton { transcriptOpen = false }
                                 }
                             },
                             actions = {
@@ -95,7 +98,7 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     bottomBar = {
-                        if (currentNote == null) {
+                        if (currentNote == null && !transcriptOpen) {
                             NavigationBar {
                                 NavigationBarItem(
                                     selected = selectedTab == 0,
@@ -107,7 +110,7 @@ class MainActivity : ComponentActivity() {
                                     selected = selectedTab == 1,
                                     onClick = { selectedTab = 1 },
                                     icon = { Icon(Icons.Default.UploadFile, contentDescription = null) },
-                                    label = { Text("Transcribe file") }
+                                    label = { Text("Transcripts") }
                                 )
                             }
                         }
@@ -125,7 +128,7 @@ class MainActivity : ComponentActivity() {
                     if (selectedTab == 0 || currentNote != null) {
                         MainScreen(viewModel, Modifier.padding(innerPadding))
                     } else {
-                        FileTranscriptionScreen(viewModel, Modifier.padding(innerPadding))
+                        FileTranscriptionScreen(viewModel, transcriptOpen, { transcriptOpen = it }, Modifier.padding(innerPadding))
                     }
                 }
             }

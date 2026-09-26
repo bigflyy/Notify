@@ -1,6 +1,8 @@
 package com.example.notify
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -14,18 +16,19 @@ import java.text.DateFormat
 import java.util.Date
 
 @Composable
-fun SavedTranscriptCard(entry: TranscriptHistory.Entry, onOpen: () -> Unit, onDelete: () -> Unit) {
+fun SavedTranscriptCard(entry: TranscriptHistory.Entry, onOpen: () -> Unit, onDelete: () -> Unit, deleteEnabled: Boolean = true) {
     var confirmDelete by remember(entry.id) { mutableStateOf(false) }
-    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Row(modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+    Card(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(entry.fileName, style = MaterialTheme.typography.titleMedium)
+                Text(entry.fileName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(entry.createdAt))} · ${if (entry.complete) "Complete" else "Partial"}",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { confirmDelete = true }) {
+            IconButton(onClick = { confirmDelete = true }, enabled = deleteEnabled) {
                 Icon(Icons.Default.Delete, "Delete transcript", tint = MaterialTheme.colorScheme.error)
             }
         }

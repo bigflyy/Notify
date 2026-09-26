@@ -22,6 +22,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (providers.gradleProperty("isolatedUiTests").orNull == "true") {
+                applicationIdSuffix = ".codextest"
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(

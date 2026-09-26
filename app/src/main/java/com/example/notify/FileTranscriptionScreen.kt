@@ -4,36 +4,24 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +29,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import com.example.notify.stt.TranscriptHistory
 import com.example.notify.ui.MainViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +37,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
+fun FileTranscriptionScreen(
+    viewModel: MainViewModel,
+    detailOpen: Boolean,
+    onDetailOpenChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
@@ -59,131 +53,201 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     val importWasCancelled by viewModel.importWasCancelled.observeAsState(false)
     val transcriptPartial by viewModel.importedTranscriptPartial.observeAsState(false)
     val history by viewModel.transcriptionHistory.observeAsState(emptyList())
-    var showHistory by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(history.isEmpty()) { if (history.isEmpty()) showHistory = false }
     val progress by viewModel.importProgress.observeAsState()
     val fileName by viewModel.importedFileName.observeAsState()
     val transcript by viewModel.importedTranscript.observeAsState()
     val error by viewModel.importError.observeAsState()
-
+    // Browsing a saved entry must not replace the state of an active import.
+    var selectedHistoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    val savedEntry = history.firstOrNull { it.id == selectedHistoryId }
+    val displayedName = if (selectedHistoryId != null) savedEntry?.fileName else fileName
+    val displayedText = if (selectedHistoryId != null) savedEntry?.text else transcript
+    LaunchedEffect(detailOpen, selectedHistoryId, fileName) {
+        // An interrupted import cannot be resumed after Android recreates the process.
+        if (detailOpen && selectedHistoryId == null && fileName == null) onDetailOpenChange(false)
+    }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            showHistory = false
             val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-                ?.use { if (it.moveToFirst()) it.getString(0) else null }
-                ?: "Recording"
+                ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "Recording"
+            selectedHistoryId = null
             viewModel.transcribeFile(uri, name)
+            onDetailOpenChange(true)
         }
     }
     val textExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        val text = viewModel.importedTranscript.value
-        if (uri != null && !text.isNullOrBlank()) saveFile(context, scope, uri, "$text\n")
+        if (uri != null && !displayedText.isNullOrBlank()) saveFile(context, scope, uri, "$displayedText\n")
     }
     val markdownExporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
-        val text = viewModel.importedTranscript.value
-        if (uri != null && !text.isNullOrBlank()) {
-            val title = fileName.orEmpty().substringBeforeLast('.').replace(Regex("[\\r\\n]+"), " ")
-                .ifBlank { "Transcript" }
-            saveFile(context, scope, uri, "# $title\n\n$text\n")
-        }
+        if (uri != null && !displayedText.isNullOrBlank()) saveFile(context, scope, uri, transcriptMarkdown(displayedName, displayedText))
     }
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Transcribe a file", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
-        Text("Turn Russian audio or video into text.",
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { filePicker.launch(arrayOf("*/*")) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = isEngineReady && !isImporting && !isRecording
-        ) { Text("Choose media file") }
-        if (history.isNotEmpty()) {
-            TextButton(onClick = { showHistory = !showHistory }, enabled = !isImporting) {
-                Text(if (showHistory) "Back to transcript" else "History (${history.size})")
-            }
-        }
-        if (!isEngineReady) Text("Loading Russian speech model...")
-        if (isImporting) {
-            val percentage = progress?.percent
-            if (percentage != null) {
-                Text("Transcribing... $percentage%")
-                LinearProgressIndicator(
-                    progress = { percentage / 100f },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                val remaining = progress?.secondsRemaining
-                Text(if (remaining != null) "About ${formatTime(remaining)} left" else "Estimating time left...")
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator()
-                    Text("Transcribing...", modifier = Modifier.padding(start = 12.dp))
-                }
-                val processed = progress?.secondsProcessed
-                if (processed != null) {
-                    Text("Processed ${formatTime(processed)} of audio; total duration unavailable")
-                }
-            }
-            TextButton(
-                onClick = viewModel::cancelFileTranscription,
-                enabled = !isImportCancelling
-            ) { Text(if (isImportCancelling) "Stopping..." else "Cancel") }
-        }
-        if (isImporting && !transcript.isNullOrBlank()) {
-            Text("Partial transcript — still transcribing")
-        } else if (transcriptPartial && !transcript.isNullOrBlank() && !showHistory) {
-            Text("Partial transcript")
-        } else if (importWasCancelled && transcript.isNullOrBlank()) {
-            Text("Stopped before any speech was transcribed")
-        }
-        if (error != null) {
-            Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-        }
-        if (fileName != null && !showHistory) {
-            Spacer(Modifier.height(16.dp))
-            Text(fileName.orEmpty(), style = MaterialTheme.typography.titleMedium)
-        }
-        if (showHistory || (transcript == null && !isImporting && history.isNotEmpty())) {
-            Text("Saved transcripts", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(history, key = { it.id }) { entry ->
-                    SavedTranscriptCard(
-                        entry = entry,
-                        onOpen = {
-                            viewModel.openSavedTranscript(entry.id)
-                            showHistory = false
-                        },
-                        onDelete = { viewModel.deleteSavedTranscript(entry.id) }
-                    )
-                }
-            }
-        } else if (transcript != null) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { clipboard.setText(AnnotatedString(transcript.orEmpty())) }, enabled = !transcript.isNullOrBlank()) {
-                    Text("Copy")
-                }
-                TextButton(onClick = { textExporter.launch("${exportBaseName(fileName)}.txt") }, enabled = !transcript.isNullOrBlank()) {
-                    Text("Save .txt")
-                }
-                TextButton(onClick = { markdownExporter.launch("${exportBaseName(fileName)}.md") }, enabled = !transcript.isNullOrBlank()) {
-                    Text("Save .md")
+    if (!detailOpen) {
+        TranscriptList(
+            history = history,
+            canImport = isEngineReady && !isImporting && !isRecording,
+            isImporting = isImporting,
+            status = when {
+                !isEngineReady -> "Loading Russian speech model..."
+                isRecording -> "Stop recording to transcribe a file."
+                isImporting -> "Transcription continues while you browse. Deletion is available when it finishes."
+                else -> error
+            },
+            currentFileName = fileName?.takeIf { isImporting || transcript.isNullOrBlank() },
+            currentStatus = if (isImporting) "Transcribing${progress?.percent?.let { " · $it%" }.orEmpty()} · Tap to view"
+                else "View result",
+            onOpenCurrent = { selectedHistoryId = null; onDetailOpenChange(true) },
+            onOpen = { selectedHistoryId = it.id; onDetailOpenChange(true) },
+            onDelete = { viewModel.deleteSavedTranscript(it.id) },
+            onImport = { filePicker.launch(arrayOf("*/*")) },
+            modifier = modifier
+        )
+    } else {
+        TranscriptDetail(
+            fileName = displayedName.orEmpty(),
+            transcript = displayedText,
+            onCopy = { clipboard.setText(AnnotatedString(displayedText.orEmpty())) },
+            onCopyMarkdown = { clipboard.setText(AnnotatedString(transcriptMarkdown(displayedName, displayedText))) },
+            onSaveText = {
+                textExporter.launch("${exportBaseName(displayedName)}.txt")
+            },
+            onSaveMarkdown = {
+                markdownExporter.launch("${exportBaseName(displayedName)}.md")
+            },
+            modifier = modifier,
+            status = {
+                if (selectedHistoryId != null) {
+                    if (savedEntry == null) Text(error ?: "Loading saved transcript...")
+                    else if (!savedEntry.complete) Text("Partial transcript", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    if (isImporting) {
+                        val percentage = progress?.percent
+                        if (percentage != null) {
+                            Text("Transcribing... $percentage%")
+                            LinearProgressIndicator(
+                                progress = { percentage / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            val remaining = progress?.secondsRemaining
+                            Text(if (remaining != null) "About ${formatTime(remaining)} left" else "Estimating time left...")
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator()
+                                Text("Transcribing...", modifier = Modifier.padding(start = 12.dp))
+                            }
+                            val processed = progress?.secondsProcessed
+                            if (processed != null) {
+                                Text("Processed ${formatTime(processed)} of audio; total duration unavailable")
+                            }
+                        }
+                        TextButton(
+                            onClick = viewModel::cancelFileTranscription,
+                            enabled = !isImportCancelling
+                        ) { Text(if (isImportCancelling) "Stopping..." else "Cancel") }
+                    }
+
+                    if (isImporting && !transcript.isNullOrBlank()) Text("Partial transcript · Still transcribing")
+                    else if (transcriptPartial && !transcript.isNullOrBlank()) Text("Partial transcript")
+                    else if (importWasCancelled && transcript.isNullOrBlank()) Text("Stopped before any speech was transcribed")
+                    if (error != null) Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                    if (isImporting && transcript == null) Text("Recognized speech will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Surface(modifier = Modifier.weight(1f).fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                SelectionContainer(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-                    Text(transcript?.ifBlank { "No speech detected" }.orEmpty())
+        )
+    }
+}
+
+@Composable
+internal fun TranscriptBackButton(onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to transcripts") }
+}
+
+@Composable
+internal fun TranscriptList(
+    history: List<TranscriptHistory.Entry>,
+    canImport: Boolean,
+    isImporting: Boolean,
+    status: String?,
+    currentFileName: String?,
+    currentStatus: String,
+    onOpenCurrent: () -> Unit,
+    onOpen: (TranscriptHistory.Entry) -> Unit,
+    onDelete: (TranscriptHistory.Entry) -> Unit,
+    onImport: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier.fillMaxSize()) {
+        LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
+            item { Text("Your transcripts", style = MaterialTheme.typography.headlineSmall) }
+            if (status != null) item { Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (currentFileName != null) item {
+                Card(onClick = onOpenCurrent, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(currentFileName, style = MaterialTheme.typography.titleMedium)
+                        Text(currentStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
-        } else if (!isImporting && history.isEmpty()) {
-            Spacer(Modifier.height(32.dp))
-            Text("Your transcripts, kept here", style = MaterialTheme.typography.titleMedium)
-            Text("Choose a file to get started. Transcripts are saved on this device so you can return to them later.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            if (history.isEmpty() && currentFileName == null) item {
+                Text("Choose a Russian audio or video file. Your transcripts will be saved here.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(history, key = { it.id }) { entry ->
+                SavedTranscriptCard(entry, onOpen = { onOpen(entry) }, onDelete = { onDelete(entry) }, deleteEnabled = !isImporting)
+            }
+        }
+        if (canImport) ExtendedFloatingActionButton(
+            onClick = onImport,
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            text = { Text("Transcribe file") },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+        )
+    }
+}
+
+@Composable
+internal fun TranscriptDetail(
+    fileName: String,
+    transcript: String?,
+    onCopy: () -> Unit,
+    onCopyMarkdown: () -> Unit,
+    onSaveText: () -> Unit,
+    onSaveMarkdown: () -> Unit,
+    modifier: Modifier = Modifier,
+    status: @Composable () -> Unit = {}
+) {
+    var exportMenu by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(fileName, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            Box {
+                IconButton(onClick = { exportMenu = true }, enabled = !transcript.isNullOrBlank()) {
+                    Icon(Icons.Default.Share, "Export transcript")
+                }
+                DropdownMenu(expanded = exportMenu, onDismissRequest = { exportMenu = false }) {
+                    DropdownMenuItem(text = { Text("Copy text") }, onClick = { exportMenu = false; onCopy() })
+                    DropdownMenuItem(text = { Text("Copy as Markdown") }, onClick = { exportMenu = false; onCopyMarkdown() })
+                    DropdownMenuItem(text = { Text("Save text file") }, onClick = { exportMenu = false; onSaveText() })
+                    DropdownMenuItem(text = { Text("Save Markdown file") }, onClick = { exportMenu = false; onSaveMarkdown() })
+                }
+            }
+        }
+        status()
+        if (transcript != null) {
+            SelectionContainer(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(transcript.ifBlank { "No speech detected" }, style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
+}
+
+internal fun transcriptMarkdown(fileName: String?, transcript: String?): String {
+    val title = fileName.orEmpty().substringBeforeLast('.').replace(Regex("[\\r\\n]+"), " ").ifBlank { "Transcript" }
+    return "# $title\n\n${transcript.orEmpty()}\n"
 }
 
 private fun formatTime(seconds: Long): String =
