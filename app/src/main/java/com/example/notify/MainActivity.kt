@@ -189,9 +189,7 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                         color = Color.Gray
                                     )
                                 }
-                                IconButton(onClick = { viewModel.deleteNote(note) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
-                                }
+                                NoteDeleteButton(note) { viewModel.deleteNote(note) }
                             }
                         }
                     }
@@ -285,6 +283,9 @@ fun NoteEditor(
     }
     var title by remember(note.id) { mutableStateOf(note.title ?: "") }
     var showExportMenu by remember(note.id) { mutableStateOf(false) }
+    var tagToRemove by remember(note.id) { mutableStateOf<com.example.notify.domain.Tag?>(null) }
+    var tagToDeleteGlobally by remember(note.id) { mutableStateOf<com.example.notify.domain.Tag?>(null) }
+    var blockToDelete by remember(note.id) { mutableStateOf<com.example.notify.domain.Entry?>(null) }
     var selectedBlockIndex by remember { mutableIntStateOf(-1) }
     var micTargetIndex by remember { mutableIntStateOf(-1) }
     var cursorPosition by remember { mutableIntStateOf(0) }
@@ -299,6 +300,45 @@ fun NoteEditor(
 
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+
+    tagToRemove?.let { tag ->
+        ConfirmDeleteDialog(
+            title = "Remove tag?",
+            message = "Remove #${tag.name} from this note?",
+            confirmLabel = "Remove",
+            onDismiss = { tagToRemove = null },
+            onConfirm = {
+                tagToRemove = null
+                onRemoveTag(tag)
+            }
+        )
+    }
+    tagToDeleteGlobally?.let { tag ->
+        ConfirmDeleteDialog(
+            title = "Delete tag everywhere?",
+            message = "Delete #${tag.name} from all notes? The notes themselves will remain.",
+            onDismiss = { tagToDeleteGlobally = null },
+            onConfirm = {
+                tagToDeleteGlobally = null
+                onDeleteTagGlobally(tag)
+            }
+        )
+    }
+    blockToDelete?.let { entry ->
+        ConfirmDeleteDialog(
+            title = "Delete block?",
+            message = if (entry is AudioEntry) "Delete this audio block and its recording? This cannot be undone."
+                      else "Delete this text block? This cannot be undone.",
+            onDismiss = { blockToDelete = null },
+            onConfirm = {
+                blockToDelete = null
+                val index = note.entries.indexOfFirst {
+                    if (entry.id != null) it.id == entry.id else it === entry
+                }
+                if (index >= 0) onDeleteEntry(index)
+            }
+        )
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -390,7 +430,7 @@ fun NoteEditor(
                                 contentDescription = "Remove",
                                 modifier = Modifier
                                     .size(16.dp)
-                                    .clickable { onRemoveTag(tag) }
+                                    .clickable { tagToRemove = tag }
                             )
                         },
                         colors = InputChipDefaults.inputChipColors(
@@ -467,7 +507,10 @@ fun NoteEditor(
 
                                                     // The 'X' button to delete from DB
                                                     IconButton(
-                                                        onClick = { onDeleteTagGlobally(tag) },
+                                                        onClick = {
+                                                            showDialog = false
+                                                            tagToDeleteGlobally = tag
+                                                        },
                                                         modifier = Modifier.size(30.dp) // Standard icon size
                                                     ) {
                                                         Icon(
@@ -689,7 +732,7 @@ fun NoteEditor(
                         // DELETE BUTTON (VISIBLE ONCE SELECTED)
                         if (isSelected) {
                             IconButton(
-                                onClick = { onDeleteEntry(index) },
+                                onClick = { blockToDelete = entry },
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(
@@ -723,4 +766,47 @@ fun formatTime(seconds: Int): String {
     val m = seconds / 60
     val s = seconds % 60
     return "%02d:%02d".format(m, s)
+}
+
+@Composable
+fun NoteDeleteButton(note: com.example.notify.domain.Note, onDelete: () -> Unit) {
+    var showConfirmation by remember(note.id) { mutableStateOf(false) }
+    IconButton(onClick = { showConfirmation = true }) {
+        Icon(Icons.Default.Delete, contentDescription = "Delete note", tint = MaterialTheme.colorScheme.error)
+    }
+    if (showConfirmation) {
+        val noteName = note.title?.takeIf { it.isNotBlank() } ?: "this note"
+        ConfirmDeleteDialog(
+            title = "Delete note?",
+            message = "Are you sure you want to delete \"$noteName\"?" +
+                if (note.entries.any { it is AudioEntry }) " Its audio recordings will also be deleted."
+                else " This cannot be undone.",
+            onDismiss = { showConfirmation = false },
+            onConfirm = {
+                showConfirmation = false
+                onDelete()
+            }
+        )
+    }
+}
+
+@Composable
+private fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    confirmLabel: String = "Delete"
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmLabel, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
