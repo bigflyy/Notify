@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +26,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,10 +93,12 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
         Text("Transcribe a file", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
-        Text("Russian speech · audio or video supported by this device")
+        Text("Turn Russian audio or video into text.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { filePicker.launch(arrayOf("*/*")) },
+            modifier = Modifier.fillMaxWidth(),
             enabled = isEngineReady && !isImporting && !isRecording
         ) { Text("Choose media file") }
         if (history.isNotEmpty()) {
@@ -142,20 +148,24 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
         }
         if (showHistory || (transcript == null && !isImporting && history.isNotEmpty())) {
             Text("Saved transcripts", style = MaterialTheme.typography.titleMedium)
-            LazyColumn(modifier = Modifier.weight(1f)) {
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(history, key = { it.id }) { entry ->
-                    TextButton(
+                    Card(
                         onClick = {
                             viewModel.openSavedTranscript(entry.id)
                             showHistory = false
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(entry.fileName, style = MaterialTheme.typography.bodyLarge)
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text(entry.fileName, style = MaterialTheme.typography.titleMedium)
                             Text(
                                 "${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(entry.createdAt))} · ${if (entry.complete) "Complete" else "Partial"}",
-                                style = MaterialTheme.typography.bodySmall
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -173,9 +183,17 @@ fun FileTranscriptionScreen(viewModel: MainViewModel, modifier: Modifier = Modif
                     Text("Save .md")
                 }
             }
-            SelectionContainer(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                Text(transcript?.ifBlank { "No speech detected" }.orEmpty())
+            Surface(modifier = Modifier.weight(1f).fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                SelectionContainer(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+                    Text(transcript?.ifBlank { "No speech detected" }.orEmpty())
+                }
             }
+        } else if (!isImporting && history.isEmpty()) {
+            Spacer(Modifier.height(32.dp))
+            Text("Your transcripts, kept here", style = MaterialTheme.typography.titleMedium)
+            Text("Choose a file to get started. Transcripts are saved on this device so you can return to them later.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

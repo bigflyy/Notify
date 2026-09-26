@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -45,15 +46,19 @@ import com.example.notify.domain.TextEntry
 import com.example.notify.ui.MainViewModel
 import com.example.notify.ui.MainViewModelNoPattern
 import com.example.notify.ui.theme.NotifyTheme
+import com.example.notify.ui.theme.readThemeMode
+import com.example.notify.ui.theme.saveThemeMode
 import java.text.SimpleDateFormat
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            NotifyTheme {
+            var themeMode by remember { mutableStateOf(readThemeMode(this)) }
+            NotifyTheme(themeMode = themeMode) {
                 val viewModel: MainViewModel = viewModel()
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
@@ -68,6 +73,27 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(if (currentNote != null) "Edit note" else "Notify") },
+                            navigationIcon = {
+                                if (currentNote != null) {
+                                    IconButton(onClick = {
+                                        viewModel.stopAudio()
+                                        viewModel.selectNote(null)
+                                    }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to notes") }
+                                }
+                            },
+                            actions = {
+                                AppearanceMenu(themeMode) {
+                                    themeMode = it
+                                    saveThemeMode(this@MainActivity, it)
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background)
+                        )
+                    },
                     bottomBar = {
                         if (currentNote == null) {
                             NavigationBar {
@@ -88,9 +114,11 @@ class MainActivity : ComponentActivity() {
                     },
                     floatingActionButton = {
                         if (currentNote == null && selectedTab == 0) {
-                            FloatingActionButton(onClick = { viewModel.createNewTextNote() }) {
-                                Icon(Icons.Default.Add, contentDescription = "New Note")
-                            }
+                            ExtendedFloatingActionButton(
+                                onClick = { viewModel.createNewTextNote() },
+                                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                                text = { Text("New note") }
+                            )
                         }
                     }
                 ) { innerPadding ->
@@ -128,15 +156,25 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
         if (currentNote == null) {
             if (notes.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No notes yet. Tap + to create one.", color = Color.Gray)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Default.Description, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("A place for your ideas", style = MaterialTheme.typography.titleLarge)
+                        Text("Create a note to write or record your thoughts.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item { Text("Your notes", style = MaterialTheme.typography.headlineSmall) }
                     items(notes) { note ->
                         Card(
                             onClick = { viewModel.selectNote(note) },
-                            modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth(),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Row(
@@ -174,7 +212,7 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                                 Text(
                                                     text = "+${note.tags.size - 3}",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = Color.Gray,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     modifier = Modifier.align(Alignment.CenterVertically)
                                                 )
                                             }
@@ -186,7 +224,7 @@ fun MainScreen(viewModel: MainViewModel, modifier: Modifier = Modifier) {
                                     Text(
                                         text = "Created: ${dateFormatter.format(note.createdAt)}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.Gray
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                                 NoteDeleteButton(note) { viewModel.deleteNote(note) }
@@ -356,14 +394,15 @@ fun NoteEditor(
                     }
                 },
                 shape = CircleShape,
-                containerColor = if (isRecording) Color.Red else MaterialTheme.colorScheme.primaryContainer
+                containerColor = if (isRecording) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                contentColor = if (isRecording) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 if (!isEngineReady && !isRecording) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 } else {
                     Icon(
                         imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                        contentDescription = "Mic"
+                        contentDescription = if (isRecording) "Stop recording" else "Record audio"
                     )
                 }
             }
@@ -376,8 +415,8 @@ fun NoteEditor(
                     value = title,
                     onValueChange = { title = it; onTitleChange(it) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Title", style = MaterialTheme.typography.headlineMedium) },
-                    textStyle = MaterialTheme.typography.headlineMedium,
+                    placeholder = { Text("Title", style = MaterialTheme.typography.titleLarge) },
+                    textStyle = MaterialTheme.typography.titleLarge,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,
@@ -413,7 +452,7 @@ fun NoteEditor(
                     }
                 }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             FlowRow(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -511,13 +550,13 @@ fun NoteEditor(
                                                             showDialog = false
                                                             tagToDeleteGlobally = tag
                                                         },
-                                                        modifier = Modifier.size(30.dp) // Standard icon size
+                                                        modifier = Modifier.size(48.dp) // Standard icon size
                                                     ) {
                                                         Icon(
                                                             imageVector = Icons.Default.Close,
                                                             contentDescription = "Delete Global",
                                                             // Use a slightly dimmer red so it doesn't shout
-                                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                                            tint = MaterialTheme.colorScheme.error,
                                                             modifier = Modifier.size(16.dp)
                                                         )
                                                     }
@@ -570,9 +609,9 @@ fun NoteEditor(
                                     selectedBlockIndex = newIndex // Update selection to follow
                                 },
                                 enabled = index > 0,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(Icons.Default.KeyboardArrowUp, "Up", tint = if (index > 0) MaterialTheme.colorScheme.primary else Color.LightGray)
+                                Icon(Icons.Default.KeyboardArrowUp, "Up", tint = if (index > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
                             }
                             IconButton(
                                 onClick = {
@@ -583,9 +622,9 @@ fun NoteEditor(
                                     selectedBlockIndex = newIndex // Update selection to follow
                                 },
                                 enabled = index < note.entries.size - 1,
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(Icons.Default.KeyboardArrowDown, "Down", tint = if (index < note.entries.size - 1) MaterialTheme.colorScheme.primary else Color.LightGray)
+                                Icon(Icons.Default.KeyboardArrowDown, "Down", tint = if (index < note.entries.size - 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
                             }
                         }
 
@@ -719,7 +758,7 @@ fun NoteEditor(
                                     }
                                     clipboard.setText(AnnotatedString(textToCopy))
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     Icons.Default.ContentCopy,
@@ -733,12 +772,12 @@ fun NoteEditor(
                         if (isSelected) {
                             IconButton(
                                 onClick = { blockToDelete = entry },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     Icons.Default.Close,
                                     contentDescription = "Delete block",
-                                    tint = Color.Red.copy(alpha = 0.6f),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }

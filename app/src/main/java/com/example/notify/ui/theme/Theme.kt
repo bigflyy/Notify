@@ -1,62 +1,44 @@
 package com.example.notify.ui.theme
 
 import android.app.Activity
-import android.os.Build
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryNavy,
-    secondary = SecondaryNavy,
-    tertiary = SecondaryNavy,
-    background = BackgroundNavy,
-    surface = SurfaceNavy,
-    secondaryContainer = AudioPlayingBgDark,
-    tertiaryContainer = SurfaceNavy
-)
+enum class ThemeMode(val label: String) { SYSTEM("System default"), LIGHT("Light"), DARK("Dark") }
 
-private val LightColorScheme = lightColorScheme(
-    primary = PrimaryIndigo,
-    secondary = SecondaryIndigo,
-    tertiary = DividerGray,
-    background = SlateBackground,
-    surface = NoteSurface,
-    secondaryContainer = AudioPlayingBg,
-    tertiaryContainer = DividerGray,
+fun readThemeMode(context: Context): ThemeMode = runCatching {
+    ThemeMode.valueOf(context.getSharedPreferences("appearance", Context.MODE_PRIVATE)
+        .getString("theme", ThemeMode.SYSTEM.name)!!)
+}.getOrDefault(ThemeMode.SYSTEM)
 
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onBackground = PrimaryIndigo,
-    onSurface = PrimaryIndigo
-)
+fun saveThemeMode(context: Context, mode: ThemeMode) {
+    context.getSharedPreferences("appearance", Context.MODE_PRIVATE).edit()
+        .putString("theme", mode.name).apply()
+}
 
 @Composable
-fun NotifyTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Set to false to prioritize our custom professional theme
-    dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+fun NotifyTheme(themeMode: ThemeMode = ThemeMode.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
     }
-
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            (view.context as? Activity)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+    }
+    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors,
+        typography = Typography, content = content)
 }
