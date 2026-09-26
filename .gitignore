@@ -1,0 +1,27 @@
+# Build output and local caches
+build/
+.gradle/
+.kotlin/
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.log
+
+# IDE and machine-specific configuration
+.idea/
+*.iml
+local.properties
+.DS_Store
+Thumbs.db
+
+# Signing keys are local only
+*.jks
+*.keystore
+*.p12
+
+# Required .onnx models and .aar dependencies are tracked through Git LFS.
